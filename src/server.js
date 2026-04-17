@@ -15,14 +15,27 @@ export async function startServer(targetDir, port) {
 
   const absoluteTargetDir = path.resolve(targetDir);
   const uiPath = path.join(__dirname, '../ui/dist');
-  let graphCache = { nodes: [], edges: [], generatedAt: null };
+  const graphCacheByMode = new Map();
+  const DEFAULT_MODE = 'architecture';
 
-  const refreshGraph = async () => {
-    graphCache = await analyzeProject(absoluteTargetDir);
-    return graphCache;
+  const normalizeGraphMode = (mode) => {
+    const normalized = String(mode || DEFAULT_MODE).toLowerCase();
+    return normalized === 'file' ? 'file' : 'architecture';
   };
 
-  await refreshGraph();
+  const refreshGraph = async (mode = DEFAULT_MODE) => {
+    const normalizedMode = normalizeGraphMode(mode);
+    const graph = await analyzeProject(absoluteTargetDir, { graphMode: normalizedMode });
+    graphCacheByMode.set(normalizedMode, graph);
+    return graph;
+  };
+
+  const refreshAllKnownModes = async () => {
+    const modes = graphCacheByMode.size > 0 ? Array.from(graphCacheByMode.keys()) : [DEFAULT_MODE];
+    await Promise.all(modes.map(mode => refreshGraph(mode)));
+  };
+
+  await refreshGraph(DEFAULT_MODE);
 
   const ignoredPath = (watchedPath) => {
     const normalized = watchedPath.replace(/\\/g, '/');
@@ -37,9 +50,15 @@ export async function startServer(targetDir, port) {
     ignoreInitial: true,
   });
 
-  watcher.on('add', refreshGraph);
-  watcher.on('change', refreshGraph);
-  watcher.on('unlink', refreshGraph);
+  watcher.on('add', () => {
+    void refreshAllKnownModes().catch(error => console.warn('[archfind] refresh failed:', error?.message ?? error));
+  });
+  watcher.on('change', () => {
+    void refreshAllKnownModes().catch(error => console.warn('[archfind] refresh failed:', error?.message ?? error));
+  });
+  watcher.on('unlink', () => {
+    void refreshAllKnownModes().catch(error => console.warn('[archfind] refresh failed:', error?.message ?? error));
+  });
   watcher.on('error', (error) => {
     if (error && error.code === 'ENOSPC') {
       console.warn('[archfind] File watcher disabled: system watcher limit reached (ENOSPC). API data remains available; use POST /api/graph/refresh to update manually.');
@@ -51,7 +70,12 @@ export async function startServer(targetDir, port) {
 
   app.get('/api/graph', async (req, res) => {
     try {
-      res.json(graphCache);
+      const mode = normalizeGraphMode(req.query.mode);
+      if (!graphCacheByMode.has(mode)) {
+        await refreshGraph(mode);
+      }
+
+      res.json(graphCacheByMode.get(mode));
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -61,7 +85,8 @@ export async function startServer(targetDir, port) {
 
   app.post('/api/graph/refresh', async (req, res) => {
     try {
-      const data = await refreshGraph();
+      const mode = normalizeGraphMode(req.body?.mode ?? req.query.mode);
+      const data = await refreshGraph(mode);
       res.json(data);
     } catch (error) {
       res.status(500).json({ error: error.message });

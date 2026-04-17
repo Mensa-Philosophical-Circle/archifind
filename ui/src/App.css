@@ -231,6 +231,12 @@ input {
     gap: 8px;
 }
 
+.graph-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
 .stack-btn {
     padding: 9px 10px;
     border: 1px solid var(--border);

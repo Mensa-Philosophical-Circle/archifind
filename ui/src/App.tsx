@@ -1,11 +1,12 @@
 import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, SunMedium, Workflow } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import DetailPanel from './components/DetailPanel';
 import GraphCanvas from './components/GraphCanvas';
 import type { GraphData, NodeData } from './types';
 
 const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
 const THEME_STORAGE_KEY = 'archfind-theme';
+const GRAPH_MODE_STORAGE_KEY = 'archfind-graph-mode';
 
 const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
 const BACKEND_LAYERS = new Set(['interface', 'application', 'data']);
@@ -39,14 +40,23 @@ export default function App() {
   });
   const [activeRole, setActiveRole] = useState<string>('all');
   const [stackMode, setStackMode] = useState<'full' | 'frontend' | 'backend'>('full');
-  const deferredQuery = useDeferredValue(query);
+  const [graphMode, setGraphMode] = useState<'architecture' | 'file'>(() => {
+    if (typeof window === 'undefined') {
+      return 'architecture';
+    }
 
-  const refreshGraph = async () => {
+    const storedMode = window.localStorage.getItem(GRAPH_MODE_STORAGE_KEY);
+    return storedMode === 'file' ? 'file' : 'architecture';
+  });
+  const deferredQuery = useDeferredValue(query);
+  const isArchitectureGraph = graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
+
+  const refreshGraph = useCallback(async (mode: 'architecture' | 'file') => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('/api/graph');
+      const response = await fetch(`/api/graph?mode=${encodeURIComponent(mode)}`);
       if (!response.ok) {
         throw new Error(`Failed to load graph (${response.status})`);
       }
@@ -58,16 +68,6 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void refreshGraph();
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
   }, []);
 
   useEffect(() => {
@@ -75,6 +75,18 @@ export default function App() {
     document.body.dataset.theme = theme;
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(GRAPH_MODE_STORAGE_KEY, graphMode);
+
+    const timer = window.setTimeout(() => {
+      void refreshGraph(graphMode);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [graphMode, refreshGraph]);
 
   const selectedNode = useMemo<NodeData | null>(() => {
     if (!selectedNodeId) {
@@ -167,7 +179,9 @@ export default function App() {
             </button>
           </div>
           <div className="brand-copy">
-            System-wide code relationships with a monochrome architecture view.
+            {isArchitectureGraph
+              ? 'System-wide architecture blocks and dependency flow.'
+              : 'System-wide code relationships with a monochrome architecture view.'}
           </div>
         </div>
 
@@ -196,7 +210,7 @@ export default function App() {
             />
           </label>
 
-          <button className="refresh-btn" onClick={refreshGraph}>
+          <button className="refresh-btn" onClick={() => void refreshGraph(graphMode)}>
             <RefreshCw size={14} />
             Refresh graph
           </button>
@@ -232,8 +246,31 @@ export default function App() {
           </button>
         </div>
 
+        <div className="graph-switch" role="tablist" aria-label="Graph detail mode">
+          <button
+            className={graphMode === 'architecture' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setSelectedNodeId(null);
+              setActiveRole('all');
+              setGraphMode('architecture');
+            }}
+          >
+            Architecture
+          </button>
+          <button
+            className={graphMode === 'file' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setSelectedNodeId(null);
+              setActiveRole('all');
+              setGraphMode('file');
+            }}
+          >
+            File details
+          </button>
+        </div>
+
         <div className="filter-hint">
-          Scope first, then role: the top toggle chooses frontend/backend/full-stack, and chips below narrow roles inside that scope.
+          Scope first, then role. Diagram mode controls abstraction level: Architecture shows system blocks, File details shows direct file dependencies.
         </div>
 
         <div className="role-strip">
@@ -259,14 +296,14 @@ export default function App() {
             <Code2 size={16} />
             <div>
               <span className="stat-value">{stats.files}</span>
-              <span className="stat-label">Files</span>
+              <span className="stat-label">{isArchitectureGraph ? 'Blocks' : 'Files'}</span>
             </div>
           </div>
           <div className="stat-card">
             <ArrowUpRight size={16} />
             <div>
               <span className="stat-value">{stats.edges}</span>
-              <span className="stat-label">Edges</span>
+              <span className="stat-label">{isArchitectureGraph ? 'Relations' : 'Edges'}</span>
             </div>
           </div>
           <div className="stat-card">
@@ -282,6 +319,7 @@ export default function App() {
 
         <div className="sidebar-footer">
           <span>Updated {graph.generatedAt ? new Date(graph.generatedAt).toLocaleTimeString() : 'just now'}</span>
+          <span>{isArchitectureGraph ? 'Mode: architecture' : 'Mode: file dependency'}</span>
           <span>{deferredQuery ? `Filtering: ${deferredQuery}` : 'All files visible'}</span>
         </div>
       </aside>

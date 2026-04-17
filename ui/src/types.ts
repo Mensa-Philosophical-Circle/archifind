@@ -11,6 +11,7 @@ export interface NodeData {
     exports: number;
     kind?: string;
     symbols?: string[];
+    files?: string[];
     matched?: boolean;
     selected?: boolean;
     highlighted?: boolean;
@@ -30,6 +31,7 @@ export interface EdgeData {
 export interface GraphData {
   nodes: NodeData[];
   edges: EdgeData[];
+  graphMode?: string;
   architectureGroups?: Array<{
     id: string;
     label: string;

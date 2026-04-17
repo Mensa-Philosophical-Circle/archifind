@@ -82,6 +82,20 @@ export default function DetailPanel({ node, onClose }: Props) {
         </div>
       ) : null}
 
+      {node.data.files?.length ? (
+        <div className="detail-symbols">
+          <div className="detail-symbols-title">
+            <BookOpen size={12} />
+            <span>Included Files</span>
+          </div>
+          <div className="detail-symbol-list">
+            {node.data.files.slice(0, 8).map(file => (
+              <span key={file} className="detail-symbol-pill">{file.split('/').pop()}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="detail-path-full">{node.id}</div>
     </div>
   );

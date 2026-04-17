@@ -411,18 +411,264 @@ function roleToLayer(role) {
   }
 }
 
+function normalizeFeatureName(filePath) {
+  const segments = filePath.split('/');
+  const srcIndex = segments.indexOf('src');
+  const relevant = srcIndex >= 0 ? segments.slice(srcIndex + 1) : segments;
+  const fileName = relevant[relevant.length - 1] ?? '';
+  const folderSegments = relevant.slice(0, -1);
+
+  if (folderSegments.length === 0) {
+    if (/main\.(t|j)sx?$/.test(fileName)) {
+      return 'bootstrap';
+    }
+
+    if (/app\.module\.(t|j)sx?$/.test(fileName)) {
+      return 'app';
+    }
+
+    return 'root';
+  }
+
+  return folderSegments[0];
+}
+
+function inferArchitectureComponent(filePath, role) {
+  const lower = filePath.toLowerCase();
+
+  if (lower.endsWith('.module.ts') || lower.endsWith('.module.js')) {
+    return { component: 'module', role: 'shared' };
+  }
+
+  if (lower.endsWith('.controller.ts') || lower.endsWith('.controller.js') || lower.endsWith('.resolver.ts') || lower.endsWith('.resolver.js') || lower.endsWith('.gateway.ts') || lower.endsWith('.gateway.js')) {
+    return { component: 'controller', role: 'api' };
+  }
+
+  if (lower.endsWith('.service.ts') || lower.endsWith('.service.js') || lower.includes('/services/')) {
+    return { component: 'service', role: 'service' };
+  }
+
+  if (lower.endsWith('.repository.ts') || lower.endsWith('.repository.js') || lower.includes('/repositories/') || lower.includes('/repository/')) {
+    return { component: 'repository', role: 'database' };
+  }
+
+  if (lower.endsWith('.entity.ts') || lower.endsWith('.entity.js') || lower.endsWith('.schema.ts') || lower.endsWith('.schema.js') || lower.includes('/entities/') || lower.includes('/schemas/')) {
+    return { component: 'entity', role: 'database' };
+  }
+
+  if (lower.endsWith('.dto.ts') || lower.endsWith('.dto.js') || lower.includes('/dto/')) {
+    return { component: 'dto', role: 'shared' };
+  }
+
+  if (lower.endsWith('.guard.ts') || lower.endsWith('.guard.js') || lower.endsWith('.pipe.ts') || lower.endsWith('.pipe.js') || lower.endsWith('.interceptor.ts') || lower.endsWith('.interceptor.js') || lower.endsWith('.filter.ts') || lower.endsWith('.filter.js') || lower.endsWith('.middleware.ts') || lower.endsWith('.middleware.js') || lower.includes('/guards/') || lower.includes('/pipes/') || lower.includes('/interceptors/') || lower.includes('/filters/') || lower.includes('/middleware/')) {
+    return { component: 'cross-cutting', role: 'shared' };
+  }
+
+  if (lower.includes('/prisma/') || lower.includes('/typeorm/') || lower.includes('/sequelize/') || lower.includes('/migrations/') || lower.endsWith('.migration.ts') || lower.endsWith('.migration.js') || lower.includes('/seed')) {
+    return { component: 'persistence', role: 'orm' };
+  }
+
+  if (lower.includes('/config/')) {
+    return { component: 'configuration', role: 'shared' };
+  }
+
+  if (role === 'frontend') {
+    if (lower.includes('/components/')) {
+      return { component: 'ui-components', role: 'frontend' };
+    }
+
+    if (lower.includes('/pages/') || lower.includes('/views/') || lower.includes('/screens/')) {
+      return { component: 'ui-pages', role: 'frontend' };
+    }
+
+    if (lower.includes('/hooks/') || lower.includes('/store/') || lower.includes('/state/') || lower.includes('/context/')) {
+      return { component: 'ui-state', role: 'frontend' };
+    }
+
+    return { component: 'frontend-core', role: 'frontend' };
+  }
+
+  if (role === 'api') {
+    if (lower.includes('/routes/') || lower.includes('/controllers/') || lower.includes('/handlers/')) {
+      return { component: 'api-interface', role: 'api' };
+    }
+
+    return { component: 'api-core', role: 'api' };
+  }
+
+  if (role === 'service') {
+    return { component: 'application-services', role: 'service' };
+  }
+
+  if (role === 'database' || role === 'orm') {
+    if (lower.includes('/migration') || lower.includes('/seed') || lower.endsWith('.migration.ts') || lower.endsWith('.migration.js')) {
+      return { component: 'data-migrations', role: 'orm' };
+    }
+
+    if (lower.includes('/entity') || lower.includes('/model') || lower.includes('/schema')) {
+      return { component: 'data-models', role: role };
+    }
+
+    if (lower.includes('/repository') || lower.includes('/dao/')) {
+      return { component: 'data-repositories', role: 'database' };
+    }
+
+    return { component: 'data-access', role: role };
+  }
+
+  if (role === 'shared') {
+    if (lower.includes('/utils/') || lower.includes('/helpers/') || lower.includes('/lib/')) {
+      return { component: 'shared-utils', role: 'shared' };
+    }
+
+    if (lower.includes('/types/') || lower.includes('/interfaces/') || lower.includes('/dto/')) {
+      return { component: 'shared-contracts', role: 'shared' };
+    }
+
+    return { component: 'shared-core', role: 'shared' };
+  }
+
+  if (role === 'unknown') {
+    return { component: 'unclassified', role: 'unknown' };
+  }
+
+  return { component: 'support', role: 'shared' };
+}
+
+function buildArchitectureGraph(fileRecords, fileEdges) {
+  const blockMap = new Map();
+  const fileToBlock = new Map();
+
+  const ensureBlock = (blockId, feature, component, role) => {
+    if (!blockMap.has(blockId)) {
+      blockMap.set(blockId, {
+        id: blockId,
+        data: {
+          label: `${feature} / ${component}`,
+          ext: 'arch',
+          language: 'architecture',
+          directory: feature,
+          imports: 0,
+          exports: 0,
+          role,
+          layer: roleToLayer(role),
+          kind: component,
+          symbols: [],
+          files: [],
+        },
+        position: { x: 0, y: 0 },
+      });
+    }
+
+    return blockMap.get(blockId);
+  };
+
+  for (const record of fileRecords) {
+    const feature = normalizeFeatureName(record.id);
+    const componentInfo = inferArchitectureComponent(record.id, record.role);
+    const blockId = `arch:${feature}:${componentInfo.component}`;
+    const block = ensureBlock(blockId, feature, componentInfo.component, componentInfo.role);
+
+    fileToBlock.set(record.id, blockId);
+    block.data.imports += record.dependencies.length;
+    block.data.exports += record.exports.length;
+
+    if (block.data.files.length < 10) {
+      block.data.files.push(record.id);
+    }
+
+    if (record.exports.length > 0 && block.data.symbols.length < 24) {
+      const remaining = 24 - block.data.symbols.length;
+      block.data.symbols.push(...record.exports.slice(0, remaining));
+    }
+  }
+
+  const archEdgeMap = new Map();
+
+  for (const edge of fileEdges) {
+    const sourceBlock = fileToBlock.get(edge.source);
+    const targetBlock = fileToBlock.get(edge.target);
+
+    if (!sourceBlock || !targetBlock || sourceBlock === targetBlock) {
+      continue;
+    }
+
+    const edgeId = `arch-edge-${sourceBlock}-${targetBlock}`;
+    const existing = archEdgeMap.get(edgeId);
+    if (existing) {
+      existing.weight += 1;
+    } else {
+      archEdgeMap.set(edgeId, {
+        id: edgeId,
+        source: sourceBlock,
+        target: targetBlock,
+        kind: 'aggregated-imports',
+        weight: 1,
+      });
+    }
+  }
+
+  const nodes = Array.from(blockMap.values());
+  const edges = Array.from(archEdgeMap.values()).map(edge => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    label: `${edge.weight} deps`,
+    kind: edge.kind,
+    animated: false,
+  }));
+
+  const groupCounts = new Map();
+  nodes.forEach((node) => {
+    const role = node.data.role;
+    groupCounts.set(role, (groupCounts.get(role) ?? 0) + 1);
+  });
+
+  const architectureGroups = Array.from(groupCounts.entries())
+    .map(([role, count]) => ({
+      id: role,
+      label: role === 'unknown' ? 'unclassified' : role,
+      count,
+      layer: roleToLayer(role),
+    }))
+    .sort((left, right) => right.count - left.count);
+
+  return {
+    nodes,
+    edges,
+    architectureGroups,
+    mode: 'architecture',
+  };
+}
+
 async function classifyArchitectureRole(filePath, content, extension, dependencyCount, exportCount) {
   const heuristicRole = inferArchitectureRoleHeuristically(filePath, content, extension);
+  const aiAssistEnabled = String(process.env.ARCHFIND_AI_ASSIST || '').toLowerCase() === 'true';
 
-  if (heuristicRole !== 'unknown' || !process.env.HF_TOKEN) {
+  if (!process.env.HF_TOKEN) {
     return heuristicRole;
   }
 
   const aiRole = await classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount);
-  return normalizeArchitectureRole(aiRole);
+  const normalizedAiRole = normalizeArchitectureRole(aiRole);
+
+  if (heuristicRole === 'unknown') {
+    return normalizedAiRole;
+  }
+
+  if (!aiAssistEnabled || normalizedAiRole === 'unknown') {
+    return heuristicRole;
+  }
+
+  // Keep deterministic heuristics by default; AI only refines broad categories.
+  if (heuristicRole === 'shared' || heuristicRole === 'service' || heuristicRole === 'unknown') {
+    return normalizedAiRole;
+  }
+
+  return heuristicRole;
 }
 
-export async function analyzeProject(rootPath) {
+export async function analyzeProject(rootPath, options = {}) {
   const absoluteRoot = path.resolve(rootPath);
   const files = await fg(['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'], {
     cwd: absoluteRoot,
@@ -431,10 +677,12 @@ export async function analyzeProject(rootPath) {
   });
 
   const nodes = [];
-  const edges = [];
+  const fileEdges = [];
   const fileLookup = new Map();
   const groupCounts = new Map();
   const fileContents = new Map();
+  const fileRecords = [];
+  const requestedGraphMode = String(options.graphMode || process.env.ARCHFIND_GRAPH_MODE || 'architecture').toLowerCase();
 
   for (const file of files) {
     const relativePath = normalizeRelativePath(absoluteRoot, file);
@@ -452,7 +700,7 @@ export async function analyzeProject(rootPath) {
     fileContents.set(relativePath, content);
     groupCounts.set(role, (groupCounts.get(role) ?? 0) + 1);
 
-    nodes.push({
+    const node = {
       id: relativePath,
       data: {
         label: relativePath,
@@ -466,6 +714,18 @@ export async function analyzeProject(rootPath) {
         kind: extension,
       },
       position: { x: 0, y: 0 },
+    };
+
+    nodes.push(node);
+    fileRecords.push({
+      id: relativePath,
+      file,
+      content,
+      extension: path.extname(file).toLowerCase(),
+      dependencies,
+      exports,
+      role,
+      layer,
     });
   }
 
@@ -493,7 +753,7 @@ export async function analyzeProject(rootPath) {
       }
 
       seenTargets.add(resolved);
-      edges.push({
+      fileEdges.push({
         id: `edge-${relativePath}-${resolved}`,
         source: relativePath,
         target: resolved,
@@ -502,6 +762,17 @@ export async function analyzeProject(rootPath) {
         animated: true,
       });
     }
+  }
+
+  if (requestedGraphMode !== 'file') {
+    const architectureGraph = buildArchitectureGraph(fileRecords, fileEdges);
+    return {
+      nodes: architectureGraph.nodes,
+      edges: architectureGraph.edges,
+      architectureGroups: architectureGraph.architectureGroups,
+      graphMode: architectureGraph.mode,
+      generatedAt: new Date().toISOString(),
+    };
   }
 
   const architectureGroups = Array.from(groupCounts.entries())
@@ -515,8 +786,9 @@ export async function analyzeProject(rootPath) {
 
   return {
     nodes,
-    edges,
+    edges: fileEdges,
     architectureGroups,
+    graphMode: 'file-dependency',
     generatedAt: new Date().toISOString(),
   };
 }
