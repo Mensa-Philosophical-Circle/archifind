@@ -58,20 +58,27 @@ program
   .option('-p, --port <number>', 'Port to run the UI server on', '4000')
   .option('--no-build-ui', 'Skip automatic UI build before server startup')
   .option('--rebuild-ui', 'Force a UI rebuild before server startup')
-  .option('--ai-assist', 'Enable Hugging Face role classification assist')
-  .option('--ai-components', 'Enable Hugging Face component classification for architecture blocks')
+  .option('--no-ai-assist', 'Disable Hugging Face role classification assist')
+  .option('--no-ai-components', 'Disable Hugging Face component classification')
   .option('--hf-model <model>', 'Hugging Face model to use for zero-shot classification')
   .option('--hf-token <token>', 'Hugging Face access token (optional, can also come from env)')
+  .option('--no-ai-native', 'Disable AI-native architecture generation')
   .option('--no-open', 'Do not open the browser automatically')
   .action(async (dir, options) => {
     try {
-      if (options.aiAssist) {
-        process.env.archifind_AI_ASSIST = 'true';
+      const envPath = path.resolve(process.cwd(), '.env');
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf-8');
+        envContent.split('\n').forEach(line => {
+          const [key, ...values] = line.split('=');
+          if (key && values.length > 0 && !process.env[key.trim()]) {
+            process.env[key.trim()] = values.join('=').trim().replace(/^["']|["']$/g, '');
+          }
+        });
       }
 
-      if (options.aiComponents) {
-        process.env.archifind_AI_COMPONENTS = 'true';
-      }
+      process.env.archifind_AI_ASSIST = options.aiAssist ? 'true' : 'false';
+      process.env.archifind_AI_COMPONENTS = options.aiComponents ? 'true' : 'false';
 
       if (options.hfModel) {
         process.env.HF_MODEL = options.hfModel;
@@ -80,6 +87,8 @@ program
       if (options.hfToken) {
         process.env.HF_TOKEN = options.hfToken;
       }
+
+      process.env.archifind_AI_NATIVE = options.aiNative ? 'true' : 'false';
 
       ensureUiIsBuilt({
         autoBuild: options.buildUi,

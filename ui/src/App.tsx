@@ -1,4 +1,4 @@
-import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, SunMedium, Workflow } from 'lucide-react';
+import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, Sparkles, SunMedium, Workflow } from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import ArchitectureChat from './components/ArchitectureChat';
 import DetailPanel from './components/DetailPanel';
@@ -56,10 +56,10 @@ export default function App() {
   const deferredQuery = useDeferredValue(query);
   const isArchitectureGraph = graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
 
-  const refreshGraph = useCallback(async (mode: 'architecture' | 'file') => {
-    console.log(`[SWITCH] Switching to mode: ${mode}`);
+  const refreshGraph = useCallback(async (mode: 'architecture' | 'file', options: { aiNative?: boolean } = {}) => {
+    console.log(`[SWITCH] Switching to mode: ${mode}${options.aiNative ? ' (AI Native)' : ''}`);
     const cached = graphCache[mode];
-    if (cached) {
+    if (cached && !options.aiNative) {
       console.log(`[CACHE] Using cached graph for mode: ${mode}`);
       setGraph(cached);
       setLoading(false);
@@ -71,7 +71,11 @@ export default function App() {
 
     try {
       const ts = performance.now();
-      const response = await fetch(`/api/graph?mode=${encodeURIComponent(mode)}`);
+      const url = options.aiNative 
+        ? `/api/graph/refresh?mode=${encodeURIComponent(mode)}&aiNative=true`
+        : `/api/graph?mode=${encodeURIComponent(mode)}`;
+        
+      const response = await fetch(url, { method: options.aiNative ? 'POST' : 'GET' });
       if (!response.ok) {
         throw new Error(`Failed to load graph (${response.status})`);
       }
@@ -223,9 +227,9 @@ export default function App() {
             />
           </label>
 
-          <button className="refresh-btn" onClick={() => void refreshGraph(graphMode)}>
-            <RefreshCw size={14} />
-            Refresh graph
+          <button className="refresh-btn ai-btn" onClick={() => void refreshGraph('architecture', { aiNative: true })} title="Regenerate architecture using AI reasoning">
+            <RefreshCw size={14} className={loading ? 'spinning' : ''} />
+            Refresh Architecture
           </button>
         </div>
 
@@ -335,7 +339,15 @@ export default function App() {
           theme={theme}
         />
 
-        {loading && <div className="loading-overlay">Analyzing project structure...</div>}
+        {loading && (
+          <div className="loading-overlay">
+            <div className="loading-spinner">
+               <Sparkles size={24} className="loading-sparkle" />
+            </div>
+            <span>Architecting your map...</span>
+            <span className="loading-subtip">AI is reasoning about your codebase structure</span>
+          </div>
+        )}
 
         {selectedNode && (
           <aside className="detail-shell">

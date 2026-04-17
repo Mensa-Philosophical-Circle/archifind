@@ -208,23 +208,45 @@ input {
     accent-color: var(--accent);
 }
 
+.refresh-row {
+    display: flex;
+    gap: 8px;
+}
+
 .refresh-btn {
+    flex: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     padding: 10px 12px;
     border: 1px solid var(--border-strong);
-    border-radius: 10px;
-    background: var(--accent);
-    color: var(--accent-inverse);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .refresh-btn:hover {
-    opacity: 0.92;
+    background: var(--bg-hover);
+    border-color: var(--text-primary);
+}
+
+.ai-btn {
+    background: var(--accent);
+    color: var(--accent-inverse);
+    border-color: var(--accent);
+    font-weight: 800;
+    box-shadow: 0 4px 12px rgba(127, 127, 127, 0.15);
+}
+
+.ai-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(127, 127, 127, 0.2);
 }
 
 .stack-switch {
@@ -575,13 +597,67 @@ input {
 .loading-overlay {
     position: absolute;
     inset: 0;
-    display: grid;
-    place-items: center;
-    background: rgba(127, 127, 127, 0.07);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: rgba(var(--bg-base-rgb, 5, 5, 5), 0.86);
+    backdrop-filter: blur(12px);
     color: var(--text-primary);
     font-weight: 700;
-    letter-spacing: 0.02em;
-    z-index: 20;
+    z-index: 100;
+    animation: fadeIn 0.3s ease;
+}
+
+.loading-spinner {
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    border-radius: 20px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+}
+
+.loading-sparkle {
+    color: var(--accent);
+    animation: pulseSparkle 1.8s infinite ease-in-out;
+}
+
+.loading-subtip {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes pulseSparkle {
+    0%, 100% { 
+        transform: scale(1) rotate(0deg); 
+        opacity: 0.7; 
+        filter: drop-shadow(0 0 0px var(--accent));
+    }
+    50% { 
+        transform: scale(1.3) rotate(15deg); 
+        opacity: 1; 
+        filter: drop-shadow(0 0 12px var(--accent));
+    }
 }
 
 .detail-shell {

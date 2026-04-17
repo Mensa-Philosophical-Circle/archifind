@@ -84,6 +84,54 @@ function getHuggingFaceToken() {
   return process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN || process.env.HUGGINGFACEHUB_API_TOKEN || null;
 }
 
+async function runHuggingFaceChat(prompt, model = null) {
+  const token = getHuggingFaceToken();
+  if (!token) return null;
+
+  const modelName = model || process.env.HF_CHAT_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // Increased to 60s
+
+    console.log(`[AI-CHAT] Sending chat request to ${modelName} (OpenAI-compatible)...`);
+    
+    const response = await fetch('https://router.huggingface.co/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: modelName,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 2000,
+        temperature: 0.1,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.log(`[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`);
+      const errText = await response.text();
+      console.log(`[AI-CHAT] Error body: ${errText.slice(0, 200)}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || null;
+    if (content) {
+      console.log(`[AI-SUCCESS] RECEIVED ARCHITECTURAL REASONING FROM ${modelName} (${content.length} chars)`);
+    }
+    return content;
+  } catch (error) {
+    console.error(`[AI-CHAT] Fetch error: ${error.message}`);
+    return null;
+  }
+}
+
 function clampText(value, maxLength) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
@@ -376,17 +424,16 @@ async function runHuggingFaceZeroShot(prompt, candidateLabels) {
 
   const candidateModels = [
     process.env.HF_MODEL,
-    'MoritzLaurer/deberta-v3-large-zeroshot-v2.0',
     'facebook/bart-large-mnli',
   ].filter(Boolean);
 
   for (const modelName of candidateModels) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 30000); // Increased to 30s
 
     try {
-      console.log(`[AI] Calling HF API with model: ${modelName}`);
-      const response = await fetch(`https://api-inference.huggingface.co/models/${encodeURIComponent(modelName)}`, {
+      console.log(`[AI-CHAT] Sending classification request to ${modelName} (${prompt.length} chars)...`);
+      const response = await fetch(`https://router.huggingface.co/hf-inference/models/${encodeURIComponent(modelName)}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -396,14 +443,14 @@ async function runHuggingFaceZeroShot(prompt, candidateLabels) {
           inputs: prompt,
           parameters: {
             candidate_labels: candidateLabels,
-            multi_label: false,
           },
         }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
-        console.log(`[AI] HF API error from ${modelName}: ${response.status} ${response.statusText}`);
+        console.log(`[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`);
+        // Skip further logging to avoid spam
         continue;
       }
 
@@ -837,6 +884,69 @@ async function classifyArchitectureComponent(filePath, role, content, dependency
   return heuristicComponent;
 }
 
+function summarizeProjectSkeleton(fileRecords) {
+  const summary = fileRecords.map(r => {
+    const deps = r.dependencies.slice(0, 5).join(', ');
+    const exps = r.exports.slice(0, 5).join(', ');
+    return `- ${r.id} | ext=${path.extname(r.id)} | deps=[${deps}] | exports=[${exps}]`;
+  }).join('\n');
+
+  return summary;
+}
+
+async function generateArchitectureWithAi(fileRecords) {
+  const skeleton = summarizeProjectSkeleton(fileRecords);
+  console.log(`[AI] Project skeleton generated (${fileRecords.length} files).`);
+  console.log(`[AI] SENDING TO MODEL:\n${skeleton.slice(0, 500)}...\n[...truncated...]`);
+  
+  const prompt = `
+You are a Senior Software Architect. Analyze the following project structure and return a JSON architecture map.
+Follow "Eraser.io" aesthetic: high-level, clean, and grouped by functional domains.
+
+Project Skeleton:
+${skeleton}
+
+Return ONLY a JSON object with this structure:
+{
+  "nodes": [{"id": "arch:domain:component", "data": {"label": "Component Name", "role": "api|service|database|frontend|shared", "kind": "component", "symbols": ["symbol1", "symbol2"], "files": ["path/to/file.ts"]}}],
+  "edges": [{"source": "arch:A", "target": "arch:B", "label": "descriptive relation"}],
+  "architectureGroups": [{"id": "role", "label": "Group Label", "count": 1, "layer": "data|interface|application|presentation|shared|support"}]
+}
+
+Rules:
+1. Aggregate files into logical "arch:" nodes.
+2. Every file in the skeleton MUST be assigned to at least one arch node's "files" array.
+3. Use professional naming (e.g., "Authentication Service" instead of "auth.ts").
+4. "role" must be one of: api, service, database, frontend, shared.
+5. "layer" must be one of: data, interface, application, presentation, shared, support.
+
+JSON:
+`;
+
+  console.log('[AI] Requesting architectural reasoning from LLM...');
+  const response = await runHuggingFaceChat(prompt);
+  if (!response) {
+    console.log('[AI] ERROR: No response from model.');
+    return null;
+  }
+
+  console.log(`[AI] RECEIVED FROM MODEL:\n${response.slice(0, 1000)}...\n[...truncated...]`);
+
+  try {
+    // Basic cleanup in case AI wraps in code blocks
+    const jsonStr = response.replace(/```json/g, '').replace(/```/g, '').trim();
+    const graph = JSON.parse(jsonStr);
+    return {
+      ...graph,
+      mode: 'architecture',
+      generatedBy: 'AI-Native',
+    };
+  } catch (err) {
+    console.log('[AI] Failed to parse AI response as JSON:', err.message);
+    return null;
+  }
+}
+
 export async function analyzeProject(rootPath, options = {}) {
   const absoluteRoot = path.resolve(rootPath);
   const MAX_FILE_SIZE = 500 * 1024;
@@ -955,6 +1065,19 @@ export async function analyzeProject(rootPath, options = {}) {
   }
 
   if (requestedGraphMode !== 'file') {
+    const useAiNative = String(process.env.archifind_AI_NATIVE ?? options.aiNative ?? 'true').toLowerCase() === 'true';
+
+    if (useAiNative && getHuggingFaceToken()) {
+      const aiGraph = await generateArchitectureWithAi(fileRecords);
+      if (aiGraph) {
+        return {
+          ...aiGraph,
+          generatedAt: new Date().toISOString(),
+        };
+      }
+      console.log('[AI] Falling back to heuristic architecture generation');
+    }
+
     const architectureGraph = buildArchitectureGraph(fileRecords, fileEdges);
     return {
       nodes: architectureGraph.nodes,

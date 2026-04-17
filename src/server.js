@@ -119,9 +119,12 @@ export async function startServer(targetDir, port) {
     return normalized === 'file' ? 'file' : 'architecture';
   };
 
-  const refreshGraph = async (mode = DEFAULT_MODE) => {
+  const refreshGraph = async (mode = DEFAULT_MODE, options = {}) => {
     const normalizedMode = normalizeGraphMode(mode);
-    const graph = await analyzeProject(absoluteTargetDir, { graphMode: normalizedMode });
+    const graph = await analyzeProject(absoluteTargetDir, {
+      graphMode: normalizedMode,
+      aiNative: options.aiNative ?? (process.env.archifind_AI_NATIVE === 'true'),
+    });
     graphCacheByMode.set(normalizedMode, graph);
     return graph;
   };
@@ -182,7 +185,8 @@ export async function startServer(targetDir, port) {
   app.post('/api/graph/refresh', async (req, res) => {
     try {
       const mode = normalizeGraphMode(req.body?.mode ?? req.query.mode);
-      const data = await refreshGraph(mode);
+      const aiNative = req.body?.aiNative === true || req.query.aiNative === 'true';
+      const data = await refreshGraph(mode, { aiNative });
       res.json(data);
     } catch (error) {
       res.status(500).json({ error: error.message });
