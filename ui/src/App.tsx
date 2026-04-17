@@ -8,6 +8,19 @@ const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
 const THEME_STORAGE_KEY = 'archfind-theme';
 
 const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
+const BACKEND_LAYERS = new Set(['interface', 'application', 'data']);
+
+function roleVisibleInStack(layer: string, role: string, stackMode: 'full' | 'frontend' | 'backend') {
+  if (stackMode === 'full') {
+    return true;
+  }
+
+  if (stackMode === 'frontend') {
+    return layer === 'presentation' || role === 'frontend';
+  }
+
+  return BACKEND_LAYERS.has(layer) || ['api', 'service', 'database', 'orm'].includes(role);
+}
 
 export default function App() {
   const [graph, setGraph] = useState<GraphData>(DEFAULT_GRAPH);
@@ -15,7 +28,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [minimumConnections, setMinimumConnections] = useState(0);
-  const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') {
       return 'dark';
@@ -25,6 +38,7 @@ export default function App() {
     return storedTheme === 'light' ? 'light' : 'dark';
   });
   const [activeRole, setActiveRole] = useState<string>('all');
+  const [stackMode, setStackMode] = useState<'full' | 'frontend' | 'backend'>('full');
   const deferredQuery = useDeferredValue(query);
 
   const refreshGraph = async () => {
@@ -47,7 +61,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    refreshGraph();
+    const timer = window.setTimeout(() => {
+      void refreshGraph();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -56,16 +76,13 @@ export default function App() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
-  useEffect(() => {
-    if (!selectedNode) {
-      return;
+  const selectedNode = useMemo<NodeData | null>(() => {
+    if (!selectedNodeId) {
+      return null;
     }
 
-    const updatedNode = graph.nodes.find(node => node.id === selectedNode.id);
-    if (updatedNode) {
-      setSelectedNode(updatedNode);
-    }
-  }, [graph.nodes, selectedNode]);
+    return graph.nodes.find(node => node.id === selectedNodeId) ?? null;
+  }, [graph.nodes, selectedNodeId]);
 
   const stats = useMemo(() => {
     const extCounts = graph.nodes.reduce<Record<string, number>>((accumulator, node) => {
@@ -81,34 +98,51 @@ export default function App() {
   }, [graph.edges.length, graph.nodes]);
 
   const architectureGroups = useMemo(() => {
-    if (graph.architectureGroups?.length) {
-      return graph.architectureGroups;
-    }
-
     const counts = new Map<string, number>();
+    const layers = new Map<string, string>();
+
     graph.nodes.forEach((node) => {
-      counts.set(node.data.role, (counts.get(node.data.role) ?? 0) + 1);
+      const role = node.data.role;
+      const layer = node.data.layer;
+
+      if (!roleVisibleInStack(layer, role, stackMode)) {
+        return;
+      }
+
+      counts.set(role, (counts.get(role) ?? 0) + 1);
+      if (!layers.has(role)) {
+        layers.set(role, layer);
+      }
     });
 
-    return DEFAULT_ROLE_ORDER
+    const ordered = DEFAULT_ROLE_ORDER
       .filter(role => counts.has(role))
       .map(role => ({
         id: role,
         label: role,
         count: counts.get(role) ?? 0,
-        layer: role,
+        layer: layers.get(role) ?? role,
       }));
-  }, [graph.architectureGroups, graph.nodes]);
 
-  useEffect(() => {
+    const extras = Array.from(counts.keys())
+      .filter(role => !DEFAULT_ROLE_ORDER.includes(role))
+      .sort()
+      .map(role => ({
+        id: role,
+        label: role,
+        count: counts.get(role) ?? 0,
+        layer: layers.get(role) ?? role,
+      }));
+
+    return [...ordered, ...extras];
+  }, [graph.nodes, stackMode]);
+
+  const effectiveActiveRole = useMemo(() => {
     if (activeRole === 'all') {
-      return;
+      return 'all';
     }
 
-    const roleExists = architectureGroups.some(group => group.id === activeRole);
-    if (!roleExists) {
-      setActiveRole('all');
-    }
+    return architectureGroups.some(group => group.id === activeRole) ? activeRole : 'all';
   }, [activeRole, architectureGroups]);
 
   return (
@@ -168,15 +202,49 @@ export default function App() {
           </button>
         </div>
 
+        <div className="stack-switch" role="tablist" aria-label="Architecture view mode">
+          <button
+            className={stackMode === 'full' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setStackMode('full');
+              setActiveRole('all');
+            }}
+          >
+            Full stack
+          </button>
+          <button
+            className={stackMode === 'frontend' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setStackMode('frontend');
+              setActiveRole('all');
+            }}
+          >
+            Frontend
+          </button>
+          <button
+            className={stackMode === 'backend' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setStackMode('backend');
+              setActiveRole('all');
+            }}
+          >
+            Backend
+          </button>
+        </div>
+
+        <div className="filter-hint">
+          Scope first, then role: the top toggle chooses frontend/backend/full-stack, and chips below narrow roles inside that scope.
+        </div>
+
         <div className="role-strip">
-          <button className={activeRole === 'all' ? 'role-chip active' : 'role-chip'} onClick={() => setActiveRole('all')}>
+          <button className={effectiveActiveRole === 'all' ? 'role-chip active' : 'role-chip'} onClick={() => setActiveRole('all')}>
             <Workflow size={13} />
             All
           </button>
           {architectureGroups.map(group => (
             <button
               key={group.id}
-              className={activeRole === group.id ? 'role-chip active' : 'role-chip'}
+              className={effectiveActiveRole === group.id ? 'role-chip active' : 'role-chip'}
               onClick={() => setActiveRole(group.id)}
               title={group.layer}
             >
@@ -222,11 +290,12 @@ export default function App() {
         <GraphCanvas
           key={graph.generatedAt ?? 'empty'}
           data={graph}
-          onNodeSelect={setSelectedNode}
-          selectedNodeId={selectedNode?.id ?? null}
+          onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
+          selectedNodeId={selectedNodeId}
           query={deferredQuery}
           minimumConnections={minimumConnections}
-          activeRole={activeRole}
+          activeRole={effectiveActiveRole}
+          stackMode={stackMode}
           theme={theme}
         />
 
@@ -234,7 +303,7 @@ export default function App() {
 
         {selectedNode && (
           <aside className="detail-shell">
-            <DetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} />
+            <DetailPanel node={selectedNode} onClose={() => setSelectedNodeId(null)} />
           </aside>
         )}
       </main>

@@ -45,10 +45,11 @@ interface Props {
   query: string;
   minimumConnections: number;
   activeRole: string;
+  stackMode: 'full' | 'frontend' | 'backend';
   theme: 'dark' | 'light';
 }
 
-export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections, activeRole, theme }: Props) {
+export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections, activeRole, stackMode, theme }: Props) {
   const rawNodes: Node<FlowNodeData>[] = useMemo(
     () =>
       data.nodes.map<Node<FlowNodeData>>(n => ({
@@ -73,16 +74,22 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
 
   const filteredNodes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const backendRoles = new Set(['api', 'service', 'database', 'orm']);
 
     return rawNodes.filter((node) => {
       const degree = degreeMap.get(node.id) ?? 0;
       const matchesRole = activeRole === 'all' || node.data.role === activeRole;
+      const matchesStack = stackMode === 'full'
+        ? true
+        : stackMode === 'frontend'
+          ? node.data.role === 'frontend' || node.data.layer === 'presentation'
+          : backendRoles.has(node.data.role) || ['interface', 'application', 'data'].includes(node.data.layer);
       const matchesQuery = !normalizedQuery || node.id.toLowerCase().includes(normalizedQuery) || node.data.label.toLowerCase().includes(normalizedQuery) || node.data.ext.toLowerCase().includes(normalizedQuery);
       const matchesConnectivity = degree >= minimumConnections;
 
-      return matchesRole && matchesQuery && matchesConnectivity;
+      return matchesRole && matchesStack && matchesQuery && matchesConnectivity;
     });
-  }, [activeRole, degreeMap, minimumConnections, query, rawNodes]);
+  }, [activeRole, degreeMap, minimumConnections, query, rawNodes, stackMode]);
 
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(node => node.id)), [filteredNodes]);
 

@@ -225,6 +225,41 @@ input {
     opacity: 0.92;
 }
 
+.stack-switch {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.stack-btn {
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.stack-btn:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.stack-btn.active {
+    background: var(--accent);
+    color: var(--accent-inverse);
+    border-color: var(--accent);
+}
+
+.filter-hint {
+    margin-top: -2px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-dim);
+}
+
 .role-strip {
     display: flex;
     flex-wrap: wrap;

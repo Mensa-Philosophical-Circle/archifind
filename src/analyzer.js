@@ -247,6 +247,8 @@ function parseFile(content, extension) {
 function inferArchitectureRoleHeuristically(filePath, content, extension) {
   const lowerPath = filePath.toLowerCase();
   const lowerContent = content.toLowerCase();
+  const hasPathToken = (token) => new RegExp(`(^|[/_.-])${token}([/_.-]|$)`).test(lowerPath);
+  const hasAnyPathToken = (tokens) => tokens.some(token => hasPathToken(token));
 
   if (/(^|\/)cli\.(js|ts)$/.test(lowerPath) || /(tools|scripts|bin)\//.test(lowerPath)) {
     return 'script';
@@ -276,8 +278,8 @@ function inferArchitectureRoleHeuristically(filePath, content, extension) {
     return 'infra';
   }
 
-  if (/(prisma|typeorm|sequelize|knex|drizzle|mongoose|sqlalchemy|gorm|alembic|entity|migration|schema|model|repository|seed)/.test(lowerPath)) {
-    if (/(prisma|typeorm|sequelize|knex|drizzle|mongoose|sqlalchemy|gorm|alembic)/.test(lowerPath)) {
+  if (hasAnyPathToken(['prisma', 'typeorm', 'sequelize', 'knex', 'drizzle', 'mongoose', 'sqlalchemy', 'gorm', 'alembic', 'entity', 'migration', 'schema', 'model', 'repository', 'seed'])) {
+    if (hasAnyPathToken(['prisma', 'typeorm', 'sequelize', 'knex', 'drizzle', 'mongoose', 'sqlalchemy', 'gorm', 'alembic'])) {
       return 'orm';
     }
 
