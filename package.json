@@ -1,0 +1,23 @@
+{
+  "name": "archfind",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/cli.js",
+  "bin": {
+    "archfind": "./src/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "commander": "^14.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "fast-glob": "^3.3.3"
+  }
+}

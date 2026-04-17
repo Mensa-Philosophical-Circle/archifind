@@ -1,0 +1,86 @@
+:root {
+  --bg-color: #f8f9fa;
+  --grid-color: #e9ecef;
+  --node-bg: #ffffff;
+  --node-border: #adb5bd;
+  --node-text: #212529;
+  --node-accent: #4dabf7;
+  --edge-color: #ced4da;
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+[data-theme='dark'] {
+  --bg-color: #121212;
+  --grid-color: #1a1a1a;
+  --node-bg: #1e1e1e;
+  --node-border: #333333;
+  --node-text: #e0e0e0;
+  --node-accent: #339af0;
+  --edge-color: #444444;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  font-family: var(--font-family);
+  color: var(--node-text);
+  overflow: hidden;
+}
+
+.blueprint-grid {
+  background-size: 20px 20px;
+  background-image: radial-gradient(circle, var(--grid-color) 1px, transparent 1px);
+}
+
+.schematic-node {
+  padding: 12px;
+  background: var(--node-bg);
+  border: 2px solid var(--node-border);
+  border-radius: 4px;
+  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.05);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.schematic-node:hover {
+  border-color: var(--node-accent);
+  box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.1);
+}
+
+.schematic-node.selected {
+  border-color: var(--node-accent);
+  border-width: 2px;
+}
+
+.node-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--bg-color);
+  border: 1px solid var(--node-border);
+}
+
+.node-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.type-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: var(--grid-color);
+  color: var(--node-border);
+  margin-left: auto;
+}
