@@ -1,87 +1,285 @@
+import fg from 'fast-glob';
 import fs from 'fs';
 import path from 'path';
-import fg from 'fast-glob';
 
-const JS_RE = /(?:import|from|require)\s+['"]([^'"]+)['"]/g;
-const PY_RE = /(?:^|\n)\s*(?:import\s+([^\n,]+)|from\s+([^\s\n]+)\s+import)/g;
-const GO_RE = /import\s+\(\s*[^)]+\s*\)|import\s+"([^"]+)"/g;
+const JS_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
+const PY_EXTENSIONS = ['.py'];
+const GO_EXTENSIONS = ['.go'];
+
+const JS_IMPORT_RE = /^\s*import\s+[^'"\n]+from\s+['"]([^'"]+)['"]/gm;
+const JS_SIDE_EFFECT_IMPORT_RE = /^\s*import\s+['"]([^'"]+)['"]/gm;
+const JS_REQUIRE_RE = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
+const JS_EXPORT_FROM_RE = /^\s*export\s+(?:\*|\{[^\n]*\})\s+from\s+['"]([^'"]+)['"]/gm;
+const JS_EXPORT_SYMBOL_RE = /^\s*export\s+(?:default\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
+const JS_NAMED_EXPORT_RE = /^\s*export\s*\{([^\n]+)\}/gm;
+
+const PY_IMPORT_RE = /^\s*import\s+([\w.]+(?:\s+as\s+[\w.]+)?(?:\s*,\s*[\w.]+(?:\s+as\s+[\w.]+)?)*)/gm;
+const PY_FROM_IMPORT_RE = /^\s*from\s+([\w.]+)\s+import\s+([\w.*(),\s]+)/gm;
+const PY_DEF_RE = /^\s*(?:def|class)\s+([A-Za-z_][\w]*)/gm;
+
+const GO_IMPORT_RE = /^\s*import\s+"([^"]+)"/gm;
+const GO_IMPORT_BLOCK_RE = /import\s*\(([^)]+)\)/gm;
+
+function toPosixPath(value) {
+  return value.split(path.sep).join('/');
+}
+
+function normalizeRelativePath(rootPath, absolutePath) {
+  return toPosixPath(path.relative(rootPath, absolutePath));
+}
+
+function createCandidatePaths(rootPath, filePath, dependency, language) {
+  const candidates = new Set();
+  const fileDir = path.dirname(filePath);
+  const normalizedDependency = dependency.replace(/\\/g, '/');
+
+  const addCandidatesFromBase = (basePath) => {
+    candidates.add(basePath);
+
+    for (const extension of JS_EXTENSIONS) {
+      candidates.add(`${basePath}${extension}`);
+      candidates.add(path.join(basePath, `index${extension}`));
+    }
+
+    for (const extension of PY_EXTENSIONS) {
+      candidates.add(`${basePath}${extension}`);
+      candidates.add(path.join(basePath, `__init__${extension}`));
+    }
+
+    for (const extension of GO_EXTENSIONS) {
+      candidates.add(`${basePath}${extension}`);
+    }
+  };
+
+  if (normalizedDependency.startsWith('.')) {
+    addCandidatesFromBase(path.resolve(fileDir, normalizedDependency));
+  } else if (language === 'python' && normalizedDependency.startsWith('..')) {
+    addCandidatesFromBase(path.resolve(fileDir, normalizedDependency));
+  } else {
+    const stripped = normalizedDependency
+      .replace(/^@[^/]+\//, '')
+      .replace(/^\/+/, '');
+
+    addCandidatesFromBase(path.resolve(rootPath, stripped));
+    addCandidatesFromBase(path.resolve(rootPath, stripped.replace(/\./g, '/')));
+  }
+
+  return Array.from(candidates).map(candidate => normalizeRelativePath(rootPath, candidate));
+}
+
+function resolveDependency(rootPath, filePath, dependency, language, lookup) {
+  const candidates = createCandidatePaths(rootPath, filePath, dependency, language);
+
+  for (const candidate of candidates) {
+    if (lookup.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  const dependencyStem = dependency
+    .replace(/^@[^/]+\//, '')
+    .replace(/^\.\/?/, '')
+    .replace(/\.(js|jsx|ts|tsx|mjs|cjs|py|go)$/, '')
+    .split('/')
+    .filter(Boolean)
+    .pop();
+
+  if (!dependencyStem) {
+    return null;
+  }
+
+  return Array.from(lookup.keys()).find((candidate) => {
+    const candidateStem = path.basename(candidate, path.extname(candidate));
+    return candidateStem === dependencyStem || candidate.endsWith(`/${dependencyStem}.py`) || candidate.endsWith(`/${dependencyStem}.go`) || candidate.endsWith(`/${dependencyStem}/index.js`) || candidate.endsWith(`/${dependencyStem}/index.ts`);
+  }) ?? null;
+}
+
+function parseJavaScriptImports(content) {
+  const dependencies = new Set();
+  const exportedSymbols = new Set();
+
+  for (const regex of [JS_IMPORT_RE, JS_SIDE_EFFECT_IMPORT_RE, JS_REQUIRE_RE, JS_EXPORT_FROM_RE]) {
+    regex.lastIndex = 0;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      dependencies.add(match[1]);
+    }
+  }
+
+  JS_EXPORT_SYMBOL_RE.lastIndex = 0;
+  let match;
+  while ((match = JS_EXPORT_SYMBOL_RE.exec(content)) !== null) {
+    exportedSymbols.add(match[1]);
+  }
+
+  JS_NAMED_EXPORT_RE.lastIndex = 0;
+  while ((match = JS_NAMED_EXPORT_RE.exec(content)) !== null) {
+    match[1]
+      .split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const exportedName = entry.split(/\s+as\s+/i).pop();
+        if (exportedName) {
+          exportedSymbols.add(exportedName.trim());
+        }
+      });
+  }
+
+  return {
+    dependencies: Array.from(dependencies),
+    exports: Array.from(exportedSymbols),
+  };
+}
+
+function parsePythonImports(content) {
+  const dependencies = new Set();
+  const exportedSymbols = new Set();
+
+  PY_IMPORT_RE.lastIndex = 0;
+  let match;
+  while ((match = PY_IMPORT_RE.exec(content)) !== null) {
+    match[1]
+      .split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const moduleName = entry.split(/\s+as\s+/i)[0].trim();
+        if (moduleName) {
+          dependencies.add(moduleName);
+        }
+      });
+  }
+
+  PY_FROM_IMPORT_RE.lastIndex = 0;
+  while ((match = PY_FROM_IMPORT_RE.exec(content)) !== null) {
+    if (match[1]) {
+      dependencies.add(match[1]);
+    }
+  }
+
+  PY_DEF_RE.lastIndex = 0;
+  while ((match = PY_DEF_RE.exec(content)) !== null) {
+    exportedSymbols.add(match[1]);
+  }
+
+  return {
+    dependencies: Array.from(dependencies),
+    exports: Array.from(exportedSymbols),
+  };
+}
+
+function parseGoImports(content) {
+  const dependencies = new Set();
+
+  GO_IMPORT_RE.lastIndex = 0;
+  let match;
+  while ((match = GO_IMPORT_RE.exec(content)) !== null) {
+    dependencies.add(match[1]);
+  }
+
+  GO_IMPORT_BLOCK_RE.lastIndex = 0;
+  while ((match = GO_IMPORT_BLOCK_RE.exec(content)) !== null) {
+    const blockContent = match[1];
+    const blockMatches = blockContent.match(/"([^"]+)"/g) ?? [];
+    blockMatches.forEach((entry) => {
+      dependencies.add(entry.replace(/"/g, ''));
+    });
+  }
+
+  return {
+    dependencies: Array.from(dependencies),
+    exports: [],
+  };
+}
+
+function parseFile(content, extension) {
+  if (['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(extension)) {
+    return parseJavaScriptImports(content);
+  }
+
+  if (extension === '.py') {
+    return parsePythonImports(content);
+  }
+
+  if (extension === '.go') {
+    return parseGoImports(content);
+  }
+
+  return { dependencies: [], exports: [] };
+}
 
 export async function analyzeProject(rootPath) {
-  const files = await fg(['**/*.{js,jsx,ts,tsx,py,go}'], {
-    cwd: rootPath,
+  const absoluteRoot = path.resolve(rootPath);
+  const files = await fg(['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'], {
+    cwd: absoluteRoot,
     ignore: ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.*/**'],
-    absolute: true
+    absolute: true,
   });
 
   const nodes = [];
   const edges = [];
-  const fileToIndex = new Map();
+  const fileLookup = new Map();
 
-  files.forEach((file, index) => {
-    const relPath = path.relative(rootPath, file);
+  for (const file of files) {
+    const relativePath = normalizeRelativePath(absoluteRoot, file);
+    const extension = path.extname(file).slice(1).toLowerCase();
+
+    fileLookup.set(relativePath, file);
+
     nodes.push({
-      id: relPath,
-      data: { label: relPath, type: path.extname(file).slice(1) },
-      position: { x: 0, y: 0 }
+      id: relativePath,
+      data: {
+        label: relativePath,
+        ext: extension,
+        language: extension === 'tsx' || extension === 'ts' ? 'typescript' : extension === 'jsx' || extension === 'js' ? 'javascript' : extension === 'py' ? 'python' : extension === 'go' ? 'go' : extension,
+        directory: toPosixPath(path.dirname(relativePath)),
+        imports: 0,
+        exports: 0,
+        kind: extension,
+      },
+      position: { x: 0, y: 0 },
     });
-    fileToIndex.set(relPath, index);
-  });
+  }
 
-  files.forEach((file) => {
+  const nodeById = new Map(nodes.map(node => [node.id, node]));
+
+  for (const file of files) {
     const content = fs.readFileSync(file, 'utf-8');
-    const ext = path.extname(file);
-    const relFile = path.relative(rootPath, file);
-    const dir = path.dirname(relFile);
+    const relativePath = normalizeRelativePath(absoluteRoot, file);
+    const extension = path.extname(file).toLowerCase();
+    const { dependencies, exports } = parseFile(content, extension);
+    const language = extension === '.py' ? 'python' : extension === '.go' ? 'go' : 'js';
+    const seenTargets = new Set();
 
-    let match;
-    const deps = new Set();
-
-    if (['.js', '.jsx', '.ts', '.tsx'].includes(ext)) {
-      while ((match = JS_RE.exec(content)) !== null) {
-        deps.add(match[1]);
-      }
-    } else if (ext === '.py') {
-      while ((match = PY_RE.exec(content)) !== null) {
-        if (match[1]) match[1].split(',').forEach(d => deps.add(d.trim()));
-        if (match[2]) deps.add(match[2]);
-      }
-    } else if (ext === '.go') {
-       // Simple Go import extraction
-       const goInline = /import\s+"([^"]+)"/g;
-       while ((match = goInline.exec(content)) !== null) deps.add(match[1]);
-       const goBlock = /import\s+\(([\s\S]*?)\)/g;
-       while ((match = goBlock.exec(content)) !== null) {
-         const block = match[1];
-         const blockMatches = block.match(/"([^"]+)"/g);
-         if (blockMatches) blockMatches.forEach(bm => deps.add(bm.replace(/"/g, '')));
-       }
+    const node = nodeById.get(relativePath);
+    if (node) {
+      node.data.imports = dependencies.length;
+      node.data.exports = exports.length;
+      node.data.symbols = exports;
     }
 
-    deps.forEach(dep => {
-      // Resolve local paths roughly
-      let resolved = null;
-      if (dep.startsWith('.')) {
-        const fullDep = path.join(path.dirname(file), dep);
-        const relDep = path.relative(rootPath, fullDep);
-        
-        // Try various extensions
-        const possible = [relDep, `${relDep}.js`, `${relDep}.ts`, `${relDep}.tsx`, `${relDep}/index.js`, `${relDep}/index.ts`];
-        resolved = possible.find(p => fileToIndex.has(p));
-      } else {
-        // Simple search for name match in project (very naive)
-        resolved = Array.from(fileToIndex.keys()).find(k => k.endsWith(dep) || k.includes(`${dep}/`));
+    for (const dependency of dependencies) {
+      const resolved = resolveDependency(absoluteRoot, file, dependency, language, fileLookup);
+      if (!resolved || resolved === relativePath || seenTargets.has(resolved)) {
+        continue;
       }
 
-      if (resolved && resolved !== relFile) {
-        edges.push({
-          id: `e-${relFile}-${resolved}`,
-          source: relFile,
-          target: resolved,
-          animated: true
-        });
-      }
-    });
-  });
+      seenTargets.add(resolved);
+      edges.push({
+        id: `edge-${relativePath}-${resolved}`,
+        source: relativePath,
+        target: resolved,
+        label: 'imports',
+        kind: 'imports',
+        animated: true,
+      });
+    }
+  }
 
-  return { nodes, edges };
+  return {
+    nodes,
+    edges,
+    generatedAt: new Date().toISOString(),
+  };
 }

@@ -1,108 +1,165 @@
-import { useEffect, useCallback, useState } from 'react';
-import {
-  ReactFlow,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  Background,
-  Controls,
-  Panel,
-  BackgroundVariant,
-} from '@xyflow/react';
-import type {
-  Node,
-  Edge,
-  OnConnect,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import dagre from 'dagre';
-import { SchematicNode } from './components/SchematicNode';
+import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, RefreshCw, Search } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import DetailPanel from './components/DetailPanel';
+import GraphCanvas from './components/GraphCanvas';
+import type { GraphData, NodeData } from './types';
 
-const nodeTypes = {
-  schematic: SchematicNode,
-};
-
-const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'LR') => {
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-  dagreGraph.setGraph({ rankdir: direction });
-
-  nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: 180, height: 60 });
-  });
-
-  edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target);
-  });
-
-  dagre.layout(dagreGraph);
-
-  const newNodes = nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id);
-    return {
-      ...node,
-      targetPosition: direction === 'LR' ? 'left' : 'top',
-      sourcePosition: direction === 'LR' ? 'right' : 'bottom',
-      position: {
-        x: nodeWithPosition.x - 90,
-        y: nodeWithPosition.y - 30,
-      },
-      type: 'schematic',
-    } as Node;
-  });
-
-  return { nodes: newNodes, edges };
-};
+const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
 
 export default function App() {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [graph, setGraph] = useState<GraphData>(DEFAULT_GRAPH);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [minimumConnections, setMinimumConnections] = useState(0);
+  const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
+  const deferredQuery = useDeferredValue(query);
 
-  const onConnect: OnConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
-  );
+  const refreshGraph = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/graph');
+      if (!response.ok) {
+        throw new Error(`Failed to load graph (${response.status})`);
+      }
+
+      const data = await response.json();
+      setGraph(data);
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : 'Failed to load graph');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/graph')
-      .then((res) => res.json())
-      .then((data) => {
-        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-          data.nodes,
-          data.edges
-        );
-        setNodes(layoutedNodes);
-        setEdges(layoutedEdges);
-        setLoading(false);
-      });
-  }, [setNodes, setEdges]);
+    refreshGraph();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedNode) {
+      return;
+    }
+
+    const updatedNode = graph.nodes.find(node => node.id === selectedNode.id);
+    if (updatedNode) {
+      setSelectedNode(updatedNode);
+    }
+  }, [graph.nodes, selectedNode]);
+
+  const stats = useMemo(() => {
+    const extCounts = graph.nodes.reduce<Record<string, number>>((accumulator, node) => {
+      accumulator[node.data.ext] = (accumulator[node.data.ext] ?? 0) + 1;
+      return accumulator;
+    }, {});
+
+    return {
+      files: graph.nodes.length,
+      edges: graph.edges.length,
+      languages: Object.keys(extCounts).length,
+    };
+  }, [graph.edges.length, graph.nodes]);
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        fitView
-      >
-        <Background gap={20} color="#e9ecef" variant={BackgroundVariant.Dots} className="blueprint-grid" />
-        <Controls />
-        <Panel position="top-left">
-          <div style={{ background: 'white', padding: '10px', border: '2px solid #adb5bd', borderRadius: '4px', fontWeight: 'bold' }}>
-            archfind // system-map
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <div className="brand-row">
+            <div className="brand-mark">
+              <LayoutGrid size={18} />
+            </div>
+            <div>
+              <div className="brand-title">archfind</div>
+              <div className="brand-subtitle">architecture map</div>
+            </div>
           </div>
-        </Panel>
-      </ReactFlow>
-      {loading && (
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          Analyzing project structure...
+          <div className="brand-copy">
+            System-wide code relationships with a schematic, Eraser-inspired view.
+          </div>
         </div>
-      )}
+
+        <div className="toolbar-card">
+          <label className="search-box">
+            <Search size={14} className="search-icon" />
+            <input
+              className="search-input"
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              placeholder="Search files, folders, or extensions"
+            />
+          </label>
+
+          <label className="filter-row">
+            <span>
+              <Filter size={14} />
+              Minimum connectivity: {minimumConnections}
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="8"
+              value={minimumConnections}
+              onChange={event => setMinimumConnections(Number(event.target.value))}
+            />
+          </label>
+
+          <button className="refresh-btn" onClick={refreshGraph}>
+            <RefreshCw size={14} />
+            Refresh graph
+          </button>
+        </div>
+
+        <div className="stats-grid">
+          <div className="stat-card">
+            <Code2 size={16} />
+            <div>
+              <span className="stat-value">{stats.files}</span>
+              <span className="stat-label">Files</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <ArrowUpRight size={16} />
+            <div>
+              <span className="stat-value">{stats.edges}</span>
+              <span className="stat-label">Edges</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <Layers3 size={16} />
+            <div>
+              <span className="stat-value">{stats.languages}</span>
+              <span className="stat-label">Languages</span>
+            </div>
+          </div>
+        </div>
+
+        {error && <div className="error-box">{error}</div>}
+
+        <div className="sidebar-footer">
+          <span>Updated {graph.generatedAt ? new Date(graph.generatedAt).toLocaleTimeString() : 'just now'}</span>
+          <span>{deferredQuery ? `Filtering: ${deferredQuery}` : 'All files visible'}</span>
+        </div>
+      </aside>
+
+      <main className="canvas-shell">
+        <GraphCanvas
+          data={graph}
+          onNodeSelect={setSelectedNode}
+          selectedNodeId={selectedNode?.id ?? null}
+          query={deferredQuery}
+          minimumConnections={minimumConnections}
+        />
+
+        {loading && <div className="loading-overlay">Analyzing project structure...</div>}
+
+        {selectedNode && (
+          <aside className="detail-shell">
+            <DetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} />
+          </aside>
+        )}
+      </main>
     </div>
   );
 }

@@ -1,13 +1,13 @@
-import { X, File, Code2, Hash } from 'lucide-react';
+import { Code2, File, GitBranch, Hash, X } from 'lucide-react';
 import type { NodeData } from '../types';
 
 const TYPE_COLORS: Record<string, string> = {
-  ts: '#3178c6',
-  tsx: '#61dafb',
-  js: '#f7df1e',
-  jsx: '#61dafb',
-  py: '#3572A5',
-  go: '#00ADD8',
+  ts: '#4f8cff',
+  tsx: '#6fd5ff',
+  js: '#f5c542',
+  jsx: '#f5c542',
+  py: '#61b5ff',
+  go: '#3fd3d0',
 };
 
 const EXT_ICON: Record<string, string> = {
@@ -25,8 +25,8 @@ interface Props {
 }
 
 export default function DetailPanel({ node, onClose }: Props) {
-  const ext = node.data.type;
-  const color = TYPE_COLORS[ext] ?? '#a0a0b0';
+  const ext = node.data.ext;
+  const color = TYPE_COLORS[ext] ?? '#8ea2c7';
   const badge = EXT_ICON[ext] ?? ext.toUpperCase();
   const parts = node.id.split('/');
   const fileName = parts[parts.length - 1];
@@ -39,7 +39,7 @@ export default function DetailPanel({ node, onClose }: Props) {
           <File size={14} />
           <span>File Details</span>
         </div>
-        <button className="close-btn" onClick={onClose}><X size={14} /></button>
+        <button className="close-btn" onClick={onClose} aria-label="Close details"><X size={14} /></button>
       </div>
 
       <div className="detail-badge" style={{ borderColor: color, color }}>
@@ -55,6 +55,17 @@ export default function DetailPanel({ node, onClose }: Props) {
           <span>{dir}</span>
         </div>
       )}
+
+      <div className="detail-stats">
+        <div>
+          <GitBranch size={12} />
+          <span>{node.data.imports} imports</span>
+        </div>
+        <div>
+          <Code2 size={12} />
+          <span>{node.data.exports} exports</span>
+        </div>
+      </div>
 
       <div className="detail-path-full">{node.id}</div>
     </div>
