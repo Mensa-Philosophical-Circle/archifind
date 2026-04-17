@@ -1,22 +1,19 @@
-import { Code2, File, GitBranch, Hash, X } from 'lucide-react';
+import { BookOpen, Code2, File, GitBranch, Hash, Layers3, X } from 'lucide-react';
 import type { NodeData } from '../types';
 
-const TYPE_COLORS: Record<string, string> = {
-  ts: '#4f8cff',
-  tsx: '#6fd5ff',
-  js: '#f5c542',
-  jsx: '#f5c542',
-  py: '#61b5ff',
-  go: '#3fd3d0',
-};
-
-const EXT_ICON: Record<string, string> = {
-  ts: 'TS',
-  tsx: 'TSX',
-  js: 'JS',
-  jsx: 'JSX',
-  py: 'PY',
-  go: 'GO',
+const ROLE_LABELS: Record<string, string> = {
+  database: 'Database',
+  orm: 'ORM',
+  api: 'API',
+  service: 'Service',
+  frontend: 'Frontend',
+  shared: 'Shared',
+  config: 'Config',
+  infra: 'Infra',
+  tests: 'Tests',
+  docs: 'Docs',
+  script: 'Script',
+  unknown: 'Unclassified',
 };
 
 interface Props {
@@ -25,9 +22,8 @@ interface Props {
 }
 
 export default function DetailPanel({ node, onClose }: Props) {
-  const ext = node.data.ext;
-  const color = TYPE_COLORS[ext] ?? '#8ea2c7';
-  const badge = EXT_ICON[ext] ?? ext.toUpperCase();
+  const role = node.data.role || 'unknown';
+  const badge = ROLE_LABELS[role] ?? role.toUpperCase();
   const parts = node.id.split('/');
   const fileName = parts[parts.length - 1];
   const dir = parts.slice(0, -1).join('/');
@@ -37,17 +33,22 @@ export default function DetailPanel({ node, onClose }: Props) {
       <div className="detail-header">
         <div className="detail-title">
           <File size={14} />
-          <span>File Details</span>
+          <span>Architecture Details</span>
         </div>
         <button className="close-btn" onClick={onClose} aria-label="Close details"><X size={14} /></button>
       </div>
 
-      <div className="detail-badge" style={{ borderColor: color, color }}>
+      <div className="detail-badge">
         <Code2 size={12} />
         <span>{badge}</span>
       </div>
 
       <div className="detail-filename">{fileName}</div>
+
+      <div className="detail-role-line">
+        <Layers3 size={12} />
+        <span>{node.data.layer}</span>
+      </div>
 
       {dir && (
         <div className="detail-dir">
@@ -66,6 +67,20 @@ export default function DetailPanel({ node, onClose }: Props) {
           <span>{node.data.exports} exports</span>
         </div>
       </div>
+
+      {node.data.symbols?.length ? (
+        <div className="detail-symbols">
+          <div className="detail-symbols-title">
+            <BookOpen size={12} />
+            <span>Exports</span>
+          </div>
+          <div className="detail-symbol-list">
+            {node.data.symbols.slice(0, 8).map(symbol => (
+              <span key={symbol} className="detail-symbol-pill">{symbol}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="detail-path-full">{node.id}</div>
     </div>

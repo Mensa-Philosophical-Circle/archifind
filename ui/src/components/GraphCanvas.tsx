@@ -44,18 +44,20 @@ interface Props {
   selectedNodeId: string | null;
   query: string;
   minimumConnections: number;
+  activeRole: string;
+  theme: 'dark' | 'light';
 }
 
-export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections }: Props) {
+export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections, activeRole, theme }: Props) {
   const rawNodes: Node<FlowNodeData>[] = useMemo(
     () =>
       data.nodes.map<Node<FlowNodeData>>(n => ({
         id: n.id,
         type: 'fileNode',
-        data: { ...n.data, selected: n.id === selectedNodeId },
+        data: { ...n.data, selected: n.id === selectedNodeId, theme },
         position: n.position ?? { x: 0, y: 0 },
       })),
-    [data.nodes, selectedNodeId]
+    [data.nodes, selectedNodeId, theme]
   );
 
   const degreeMap = useMemo(() => {
@@ -74,12 +76,13 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
 
     return rawNodes.filter((node) => {
       const degree = degreeMap.get(node.id) ?? 0;
+      const matchesRole = activeRole === 'all' || node.data.role === activeRole;
       const matchesQuery = !normalizedQuery || node.id.toLowerCase().includes(normalizedQuery) || node.data.label.toLowerCase().includes(normalizedQuery) || node.data.ext.toLowerCase().includes(normalizedQuery);
       const matchesConnectivity = degree >= minimumConnections;
 
-      return matchesQuery && matchesConnectivity;
+      return matchesRole && matchesQuery && matchesConnectivity;
     });
-  }, [degreeMap, minimumConnections, query, rawNodes]);
+  }, [activeRole, degreeMap, minimumConnections, query, rawNodes]);
 
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(node => node.id)), [filteredNodes]);
 
@@ -132,6 +135,7 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <ReactFlow
+        key={`${data.generatedAt ?? 'empty'}-${filteredNodeIds.size}`}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
@@ -140,27 +144,28 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
         onNodeClick={onNodeClick}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.18, includeHiddenNodes: false }}
         minZoom={0.1}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#30415d" gap={28} size={1} />
+        <Background color={theme === 'dark' ? '#2b2b2b' : '#d0d0d0'} gap={28} size={1} />
         <Controls
           style={{
-            background: '#0d1522',
-            border: '1px solid #233149',
+            background: theme === 'dark' ? '#0e0e0e' : '#ffffff',
+            color: theme === 'dark' ? '#f5f5f5' : '#111111',
+            border: `1px solid ${theme === 'dark' ? '#2f2f2f' : '#d6d6d6'}`,
             borderRadius: 10,
           }}
         />
         <MiniMap
           style={{
-            background: '#0b1220',
-            border: '1px solid #233149',
+            background: theme === 'dark' ? '#090909' : '#ffffff',
+            border: `1px solid ${theme === 'dark' ? '#2f2f2f' : '#d6d6d6'}`,
             borderRadius: 10,
           }}
-          nodeColor="#7cc7ff"
-          maskColor="rgba(3,7,18,0.55)"
+          nodeColor={theme === 'dark' ? '#e5e5e5' : '#111111'}
+          maskColor={theme === 'dark' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)'}
         />
       </ReactFlow>
     </div>

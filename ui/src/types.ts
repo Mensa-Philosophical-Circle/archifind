@@ -5,6 +5,8 @@ export interface NodeData {
     ext: string;
     language: string;
     directory: string;
+    role: string;
+    layer: string;
     imports: number;
     exports: number;
     kind?: string;
@@ -28,5 +30,11 @@ export interface EdgeData {
 export interface GraphData {
   nodes: NodeData[];
   edges: EdgeData[];
+  architectureGroups?: Array<{
+    id: string;
+    label: string;
+    count: number;
+    layer: string;
+  }>;
   generatedAt?: string | null;
 }

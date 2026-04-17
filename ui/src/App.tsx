@@ -1,10 +1,13 @@
-import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, RefreshCw, Search } from 'lucide-react';
+import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, SunMedium, Workflow } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import DetailPanel from './components/DetailPanel';
 import GraphCanvas from './components/GraphCanvas';
 import type { GraphData, NodeData } from './types';
 
 const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
+const THEME_STORAGE_KEY = 'archfind-theme';
+
+const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
 
 export default function App() {
   const [graph, setGraph] = useState<GraphData>(DEFAULT_GRAPH);
@@ -13,6 +16,15 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [minimumConnections, setMinimumConnections] = useState(0);
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window === 'undefined') {
+      return 'dark';
+    }
+
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return storedTheme === 'light' ? 'light' : 'dark';
+  });
+  const [activeRole, setActiveRole] = useState<string>('all');
   const deferredQuery = useDeferredValue(query);
 
   const refreshGraph = async () => {
@@ -39,6 +51,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.body.dataset.theme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
     if (!selectedNode) {
       return;
     }
@@ -62,6 +80,37 @@ export default function App() {
     };
   }, [graph.edges.length, graph.nodes]);
 
+  const architectureGroups = useMemo(() => {
+    if (graph.architectureGroups?.length) {
+      return graph.architectureGroups;
+    }
+
+    const counts = new Map<string, number>();
+    graph.nodes.forEach((node) => {
+      counts.set(node.data.role, (counts.get(node.data.role) ?? 0) + 1);
+    });
+
+    return DEFAULT_ROLE_ORDER
+      .filter(role => counts.has(role))
+      .map(role => ({
+        id: role,
+        label: role,
+        count: counts.get(role) ?? 0,
+        layer: role,
+      }));
+  }, [graph.architectureGroups, graph.nodes]);
+
+  useEffect(() => {
+    if (activeRole === 'all') {
+      return;
+    }
+
+    const roleExists = architectureGroups.some(group => group.id === activeRole);
+    if (!roleExists) {
+      setActiveRole('all');
+    }
+  }, [activeRole, architectureGroups]);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -74,9 +123,17 @@ export default function App() {
               <div className="brand-title">archfind</div>
               <div className="brand-subtitle">architecture map</div>
             </div>
+            <button
+              className="theme-toggle"
+              onClick={() => setTheme(currentTheme => (currentTheme === 'dark' ? 'light' : 'dark'))}
+              aria-label="Toggle theme"
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {theme === 'dark' ? <SunMedium size={14} /> : <MoonStar size={14} />}
+            </button>
           </div>
           <div className="brand-copy">
-            System-wide code relationships with a schematic, Eraser-inspired view.
+            System-wide code relationships with a monochrome architecture view.
           </div>
         </div>
 
@@ -109,6 +166,24 @@ export default function App() {
             <RefreshCw size={14} />
             Refresh graph
           </button>
+        </div>
+
+        <div className="role-strip">
+          <button className={activeRole === 'all' ? 'role-chip active' : 'role-chip'} onClick={() => setActiveRole('all')}>
+            <Workflow size={13} />
+            All
+          </button>
+          {architectureGroups.map(group => (
+            <button
+              key={group.id}
+              className={activeRole === group.id ? 'role-chip active' : 'role-chip'}
+              onClick={() => setActiveRole(group.id)}
+              title={group.layer}
+            >
+              <span>{group.label}</span>
+              <span className="role-count">{group.count}</span>
+            </button>
+          ))}
         </div>
 
         <div className="stats-grid">
@@ -145,11 +220,14 @@ export default function App() {
 
       <main className="canvas-shell">
         <GraphCanvas
+          key={graph.generatedAt ?? 'empty'}
           data={graph}
           onNodeSelect={setSelectedNode}
           selectedNodeId={selectedNode?.id ?? null}
           query={deferredQuery}
           minimumConnections={minimumConnections}
+          activeRole={activeRole}
+          theme={theme}
         />
 
         {loading && <div className="loading-overlay">Analyzing project structure...</div>}
