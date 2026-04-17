@@ -1,18 +1,17 @@
 import {
-  addEdge,
+  applyNodeChanges,
   Background,
   Controls,
   type Edge,
   MarkerType,
   MiniMap,
   type Node,
+  type NodeChange,
   ReactFlow,
-  useEdgesState,
-  useNodesState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { GraphData, NodeData } from '../types';
 import FileNode from './FileNode';
 
@@ -22,10 +21,10 @@ type FlowNodeData = NodeData['data'];
 const NODE_W = 240;
 const NODE_H = 92;
 
-function applyDagreLayout(nodes: Node[], edges: Edge[]) {
+function applyDagreLayout(nodes: Node[], edges: Edge[], rankdir: 'LR' | 'TB' = 'LR') {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'LR', nodesep: 42, ranksep: 120, marginx: 40, marginy: 40 });
+  g.setGraph({ rankdir, nodesep: rankdir === 'TB' ? 28 : 42, ranksep: rankdir === 'TB' ? 80 : 120, marginx: 40, marginy: 40 });
 
   nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
   edges.forEach(e => g.setEdge(e.source, e.target));
@@ -38,6 +37,109 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]) {
   });
 }
 
+function getModuleKey(node: Node<FlowNodeData>, graphMode?: string) {
+  if ((graphMode ?? '').startsWith('architecture') || node.id.startsWith('arch:')) {
+    const parts = node.id.split(':');
+    return parts[1] || 'root';
+  }
+
+  const directory = node.data.directory && node.data.directory !== '.' ? node.data.directory : 'root';
+  const [rootSegment] = directory.split('/');
+  return rootSegment || 'root';
+}
+
+function applyModuleLaneLayout(nodes: Node<FlowNodeData>[], edges: Edge[], graphMode?: string) {
+  if (nodes.length === 0) {
+    return { nodes: [], moduleByNodeId: new Map<string, string>() };
+  }
+
+  const moduleBuckets = new Map<string, Node<FlowNodeData>[]>();
+  const moduleByNodeId = new Map<string, string>();
+
+  for (const node of nodes) {
+    const moduleKey = getModuleKey(node, graphMode);
+    moduleByNodeId.set(node.id, moduleKey);
+
+    if (!moduleBuckets.has(moduleKey)) {
+      moduleBuckets.set(moduleKey, []);
+    }
+
+    moduleBuckets.get(moduleKey)?.push(node);
+  }
+
+  const orderedModules = Array.from(moduleBuckets.entries())
+    .sort((left, right) => right[1].length - left[1].length)
+    .map(([module]) => module);
+
+  const placements = orderedModules.map((moduleKey) => {
+    const laneNodes = moduleBuckets.get(moduleKey) ?? [];
+    const laneNodeIds = new Set(laneNodes.map(node => node.id));
+    const laneEdges = edges.filter(edge => laneNodeIds.has(edge.source) && laneNodeIds.has(edge.target));
+    const laneLayout = applyDagreLayout(laneNodes, laneEdges, 'TB');
+
+    const minX = Math.min(...laneLayout.map(node => node.position.x));
+    const maxX = Math.max(...laneLayout.map(node => node.position.x + NODE_W));
+    const minY = Math.min(...laneLayout.map(node => node.position.y));
+    const maxY = Math.max(...laneLayout.map(node => node.position.y + NODE_H));
+
+    return {
+      moduleKey,
+      laneLayout,
+      minX,
+      minY,
+      width: (maxX - minX) + 140,
+      height: (maxY - minY) + 140,
+    };
+  });
+
+  const columns = Math.max(2, Math.min(4, Math.ceil(Math.sqrt(placements.length))));
+  const rows = Math.ceil(placements.length / columns);
+  const horizontalGap = 180;
+  const verticalGap = 180;
+
+  const columnWidths = Array.from({ length: columns }, (_, columnIndex) => {
+    const inColumn = placements.filter((_, index) => index % columns === columnIndex);
+    return inColumn.length > 0 ? Math.max(...inColumn.map(item => item.width)) : 0;
+  });
+
+  const rowHeights = Array.from({ length: rows }, (_, rowIndex) => {
+    const inRow = placements.slice(rowIndex * columns, (rowIndex + 1) * columns);
+    return inRow.length > 0 ? Math.max(...inRow.map(item => item.height)) : 0;
+  });
+
+  const columnOffsets = columnWidths.reduce<number[]>((offsets, _width, index) => {
+    offsets[index] = index === 0 ? 0 : offsets[index - 1] + columnWidths[index - 1] + horizontalGap;
+    return offsets;
+  }, []);
+
+  const rowOffsets = rowHeights.reduce<number[]>((offsets, _height, index) => {
+    offsets[index] = index === 0 ? 0 : offsets[index - 1] + rowHeights[index - 1] + verticalGap;
+    return offsets;
+  }, []);
+
+  const laidOutNodes: Node<FlowNodeData>[] = [];
+
+  placements.forEach((placement, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const xOffset = columnOffsets[column] ?? 0;
+    const yOffset = rowOffsets[row] ?? 0;
+    const laneNudge = column % 2 === 0 ? 0 : 70;
+
+    for (const node of placement.laneLayout) {
+      laidOutNodes.push({
+        ...node,
+        position: {
+          x: node.position.x - placement.minX + xOffset,
+          y: node.position.y - placement.minY + yOffset + laneNudge,
+        },
+      });
+    }
+  });
+
+  return { nodes: laidOutNodes, moduleByNodeId };
+}
+
 interface Props {
   data: GraphData;
   onNodeSelect: (node: NodeData) => void;
@@ -45,21 +147,25 @@ interface Props {
   query: string;
   minimumConnections: number;
   activeRole: string;
-  stackMode: 'full' | 'frontend' | 'backend';
+  layoutMode: 'modules' | 'global';
   theme: 'dark' | 'light';
 }
 
-export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections, activeRole, stackMode, theme }: Props) {
-  const rawNodes: Node<FlowNodeData>[] = useMemo(
-    () =>
-      data.nodes.map<Node<FlowNodeData>>(n => ({
-        id: n.id,
-        type: 'fileNode',
-        data: { ...n.data, selected: n.id === selectedNodeId, theme },
-        position: n.position ?? { x: 0, y: 0 },
-      })),
-    [data.nodes, selectedNodeId, theme]
-  );
+export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections, activeRole, layoutMode, theme }: Props) {
+  const baseNodes: Node<FlowNodeData>[] = useMemo(() => {
+    const ts = performance.now();
+    const mapped = data.nodes.map<Node<FlowNodeData>>(n => ({
+      id: n.id,
+      type: 'fileNode',
+      data: { ...n.data },
+      position: n.position ?? { x: 0, y: 0 },
+      draggable: true,
+    }));
+    console.log(`[PERF] baseNodes memo: ${(performance.now() - ts).toFixed(1)}ms`);
+    return mapped;
+  }, [data.nodes]);
+
+  const [interactiveNodes, setInteractiveNodes] = useState<Node<FlowNodeData>[]>([]);
 
   const degreeMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -74,59 +180,120 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
 
   const filteredNodes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    const backendRoles = new Set(['api', 'service', 'database', 'orm']);
 
-    return rawNodes.filter((node) => {
+    return baseNodes.filter((node) => {
       const degree = degreeMap.get(node.id) ?? 0;
       const matchesRole = activeRole === 'all' || node.data.role === activeRole;
-      const matchesStack = stackMode === 'full'
-        ? true
-        : stackMode === 'frontend'
-          ? node.data.role === 'frontend' || node.data.layer === 'presentation'
-          : backendRoles.has(node.data.role) || ['interface', 'application', 'data'].includes(node.data.layer);
       const matchesQuery = !normalizedQuery || node.id.toLowerCase().includes(normalizedQuery) || node.data.label.toLowerCase().includes(normalizedQuery) || node.data.ext.toLowerCase().includes(normalizedQuery);
       const matchesConnectivity = degree >= minimumConnections;
 
-      return matchesRole && matchesStack && matchesQuery && matchesConnectivity;
+      return matchesRole && matchesQuery && matchesConnectivity;
     });
-  }, [activeRole, degreeMap, minimumConnections, query, rawNodes, stackMode]);
+  }, [activeRole, baseNodes, degreeMap, minimumConnections, query]);
 
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(node => node.id)), [filteredNodes]);
 
-  const rawEdges: Edge[] = useMemo(
+  const filteredEdges: Edge[] = useMemo(
     () =>
       data.edges
         .filter(edge => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target))
-        .map(edge => ({
+        .map((edge) => ({
           id: edge.id,
           source: edge.source,
           target: edge.target,
           label: edge.label ?? 'imports',
           animated: false,
           type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#8fd3ff', width: 12, height: 12 },
-          style: { stroke: '#8fd3ff', strokeWidth: 1.4, opacity: 0.72 },
-          labelBgPadding: [6, 4],
-          labelBgBorderRadius: 4,
-          labelStyle: { fill: '#d9e8ff', fontSize: 11, fontWeight: 600 },
         })),
     [data.edges, filteredNodeIds]
   );
 
-  const laidOutNodes = useMemo(() => applyDagreLayout(rawNodes, rawEdges), [rawNodes, rawEdges]);
+  const moduleLayout = useMemo(() => {
+    if (layoutMode === 'modules') {
+      return applyModuleLaneLayout(filteredNodes, filteredEdges, data.graphMode);
+    }
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<FlowNodeData>>(laidOutNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(rawEdges);
+    const globalNodes = applyDagreLayout(filteredNodes, filteredEdges, 'LR');
+    const moduleByNodeId = new Map<string, string>();
+    globalNodes.forEach((node) => {
+      moduleByNodeId.set(node.id, getModuleKey(node, data.graphMode));
+    });
+    return { nodes: globalNodes, moduleByNodeId };
+  }, [layoutMode, filteredNodes, filteredEdges, data.graphMode]);
+
+  const styledEdges = useMemo(() => {
+    const veryLargeGraph = filteredEdges.length > 1400;
+
+    return filteredEdges
+      .filter((edge) => {
+        if (layoutMode !== 'modules' || !veryLargeGraph) {
+          return true;
+        }
+
+        const sourceModule = moduleLayout.moduleByNodeId.get(edge.source);
+        const targetModule = moduleLayout.moduleByNodeId.get(edge.target);
+        return sourceModule !== targetModule;
+      })
+      .map((edge) => {
+        const sourceModule = moduleLayout.moduleByNodeId.get(edge.source);
+        const targetModule = moduleLayout.moduleByNodeId.get(edge.target);
+        const crossModule = sourceModule !== targetModule;
+        const hideEdgeLabel = filteredEdges.length > 260;
+
+        return {
+          ...edge,
+          label: hideEdgeLabel ? undefined : edge.label,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: crossModule ? '#29c7ff' : (theme === 'dark' ? '#5f6d7c' : '#8d96a2'),
+            width: crossModule ? 12 : 10,
+            height: crossModule ? 12 : 10,
+          },
+          style: {
+            stroke: crossModule ? '#29c7ff' : (theme === 'dark' ? '#4d5968' : '#9aa3ad'),
+            strokeWidth: crossModule ? 1.35 : 0.85,
+            opacity: crossModule ? 0.56 : 0.17,
+          },
+          labelBgPadding: [6, 4] as [number, number],
+          labelBgBorderRadius: 4,
+          labelStyle: {
+            fill: theme === 'dark' ? '#d9ecff' : '#2b3a49',
+            fontSize: 11,
+            fontWeight: 600,
+          },
+        } as Edge;
+      });
+  }, [filteredEdges, layoutMode, moduleLayout.moduleByNodeId, theme]);
+
+  const layoutNodes = useMemo(
+    () =>
+      moduleLayout.nodes.map((node) => ({
+        ...node,
+      })),
+    [moduleLayout.nodes]
+  );
 
   useEffect(() => {
-    setNodes(applyDagreLayout(rawNodes, rawEdges));
-    setEdges(rawEdges);
-  }, [rawNodes, rawEdges, setEdges, setNodes]);
+    setInteractiveNodes(layoutNodes);
+  }, [layoutNodes]);
 
-  const onConnect = useCallback(
-    (params: any) => setEdges(eds => addEdge(params, eds)),
-    [setEdges]
+  const displayedNodes = useMemo(
+    () =>
+      interactiveNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          selected: node.id === selectedNodeId,
+          theme,
+        },
+      })),
+    [interactiveNodes, selectedNodeId, theme]
   );
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    console.log(`[DRAG] Node changes: ${changes.length} change(s)`);
+    setInteractiveNodes((currentNodes) => applyNodeChanges(changes, currentNodes) as Node<FlowNodeData>[]);
+  }, []);
 
   const onNodeClick = useCallback(
     (_: unknown, node: Node<FlowNodeData>) => {
@@ -142,18 +309,18 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <ReactFlow
-        key={`${data.generatedAt ?? 'empty'}-${filteredNodeIds.size}`}
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        key={`${data.generatedAt ?? 'empty'}-${filteredNodeIds.size}-${layoutMode}`}
+        nodes={displayedNodes}
+        edges={styledEdges}
         onNodeClick={onNodeClick}
+        onNodesChange={onNodesChange}
+        nodesDraggable
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.18, includeHiddenNodes: false }}
         minZoom={0.1}
         maxZoom={2}
+        onlyRenderVisibleElements
         proOptions={{ hideAttribution: true }}
       >
         <Background color={theme === 'dark' ? '#2b2b2b' : '#d0d0d0'} gap={28} size={1} />

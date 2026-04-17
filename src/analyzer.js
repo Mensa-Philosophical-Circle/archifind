@@ -49,7 +49,40 @@ const HF_ZERO_SHOT_LABELS = [
   'script',
 ];
 
+const HF_COMPONENT_LABELS = [
+  'module',
+  'api controller',
+  'application service',
+  'repository',
+  'data model',
+  'dto contract',
+  'cross-cutting',
+  'persistence',
+  'configuration',
+  'ui components',
+  'ui pages',
+  'ui state',
+  'shared utilities',
+  'shared contracts',
+  'shared core',
+  'unclassified',
+];
+
+const ROLE_COMPONENT_CANDIDATES = {
+  api: ['api controller', 'api interface', 'api core', 'cross-cutting', 'dto contract'],
+  service: ['application service', 'shared utilities', 'shared core', 'cross-cutting'],
+  database: ['repository', 'data model', 'data access', 'persistence'],
+  orm: ['persistence', 'data model', 'data migrations', 'repository'],
+  frontend: ['ui components', 'ui pages', 'ui state', 'frontend core'],
+  shared: ['shared utilities', 'shared contracts', 'shared core', 'dto contract', 'cross-cutting'],
+  unknown: HF_COMPONENT_LABELS,
+};
+
 const HIDDEN_ROLES = new Set(['config', 'infra', 'tests', 'docs', 'script']);
+
+function getHuggingFaceToken() {
+  return process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN || process.env.HUGGINGFACEHUB_API_TOKEN || null;
+}
 
 function clampText(value, maxLength) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
@@ -323,9 +356,21 @@ function buildRolePrompt(filePath, content, dependencyCount, exportCount) {
   ].join('\n');
 }
 
-async function classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount) {
-  const token = process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN || process.env.HUGGINGFACEHUB_API_TOKEN;
+function buildComponentPrompt(filePath, role, content, dependencyCount, exportCount) {
+  const snippet = clampText(content.replace(/\s+/g, ' ').trim(), 1800);
+  return [
+    `File: ${filePath}`,
+    `Role: ${role}`,
+    `Imports: ${dependencyCount}`,
+    `Exports: ${exportCount}`,
+    `Content: ${snippet}`,
+  ].join('\n');
+}
+
+async function runHuggingFaceZeroShot(prompt, candidateLabels) {
+  const token = getHuggingFaceToken();
   if (!token || typeof fetch !== 'function') {
+    console.log('[AI] HF token not available or fetch unavailable');
     return null;
   }
 
@@ -335,14 +380,12 @@ async function classifyArchitectureRoleWithHuggingFace(filePath, content, depend
     'facebook/bart-large-mnli',
   ].filter(Boolean);
 
-  const prompt = buildRolePrompt(filePath, content, dependencyCount, exportCount);
-  const labels = HF_ZERO_SHOT_LABELS;
-
   for (const modelName of candidateModels) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
+      console.log(`[AI] Calling HF API with model: ${modelName}`);
       const response = await fetch(`https://api-inference.huggingface.co/models/${encodeURIComponent(modelName)}`, {
         method: 'POST',
         headers: {
@@ -352,7 +395,7 @@ async function classifyArchitectureRoleWithHuggingFace(filePath, content, depend
         body: JSON.stringify({
           inputs: prompt,
           parameters: {
-            candidate_labels: labels,
+            candidate_labels: candidateLabels,
             multi_label: false,
           },
         }),
@@ -360,22 +403,31 @@ async function classifyArchitectureRoleWithHuggingFace(filePath, content, depend
       });
 
       if (!response.ok) {
+        console.log(`[AI] HF API error from ${modelName}: ${response.status} ${response.statusText}`);
         continue;
       }
 
       const result = await response.json();
       const rankedLabels = Array.isArray(result?.labels) ? result.labels : [];
       if (rankedLabels.length > 0) {
-        return String(rankedLabels[0]).toLowerCase();
+        const bestLabel = String(rankedLabels[0]).toLowerCase();
+        console.log(`[AI] HF classified as: ${bestLabel} (score: ${result?.scores?.[0]?.toFixed(3)})`);
+        return bestLabel;
       }
-    } catch {
-      // Fall through to the next model or heuristic fallback.
+    } catch (err) {
+      console.log(`[AI] HF API error for ${modelName}:`, err instanceof Error ? err.message : err);
     } finally {
       clearTimeout(timeout);
     }
   }
 
+  console.log('[AI] HF classification failed, falling back to heuristic');
   return null;
+}
+
+async function classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount) {
+  const prompt = buildRolePrompt(filePath, content, dependencyCount, exportCount);
+  return runHuggingFaceZeroShot(prompt, HF_ZERO_SHOT_LABELS);
 }
 
 function normalizeArchitectureRole(role) {
@@ -385,6 +437,67 @@ function normalizeArchitectureRole(role) {
   }
 
   return 'unknown';
+}
+
+function normalizeArchitectureComponent(component) {
+  const normalized = String(component || '').toLowerCase().trim();
+
+  const aliases = {
+    'api controller': 'controller',
+    'api interface': 'api-interface',
+    'api core': 'api-core',
+    'application service': 'application-services',
+    repository: 'repository',
+    'data model': 'data-models',
+    'data access': 'data-access',
+    'data migrations': 'data-migrations',
+    persistence: 'persistence',
+    module: 'module',
+    configuration: 'configuration',
+    'dto contract': 'dto',
+    'cross-cutting': 'cross-cutting',
+    'ui components': 'ui-components',
+    'ui pages': 'ui-pages',
+    'ui state': 'ui-state',
+    'frontend core': 'frontend-core',
+    'shared utilities': 'shared-utils',
+    'shared contracts': 'shared-contracts',
+    'shared core': 'shared-core',
+    unclassified: 'unclassified',
+  };
+
+  return aliases[normalized] ?? null;
+}
+
+function componentToRole(component, fallbackRole = 'unknown') {
+  if (['repository', 'data-models', 'data-access', 'data-migrations', 'persistence'].includes(component)) {
+    return component === 'persistence' || component === 'data-migrations' ? 'orm' : 'database';
+  }
+
+  if (['controller', 'api-interface', 'api-core'].includes(component)) {
+    return 'api';
+  }
+
+  if (['application-services'].includes(component)) {
+    return 'service';
+  }
+
+  if (['ui-components', 'ui-pages', 'ui-state', 'frontend-core'].includes(component)) {
+    return 'frontend';
+  }
+
+  if (['shared-utils', 'shared-contracts', 'shared-core', 'dto', 'cross-cutting', 'configuration', 'module'].includes(component)) {
+    return 'shared';
+  }
+
+  return fallbackRole;
+}
+
+async function classifyArchitectureComponentWithHuggingFace(filePath, role, content, dependencyCount, exportCount) {
+  const labels = ROLE_COMPONENT_CANDIDATES[role] ?? HF_COMPONENT_LABELS;
+  const prompt = buildComponentPrompt(filePath, role, content, dependencyCount, exportCount);
+  const result = await runHuggingFaceZeroShot(prompt, labels);
+  return normalizeArchitectureComponent(result);
 }
 
 function roleToLayer(role) {
@@ -431,6 +544,49 @@ function normalizeFeatureName(filePath) {
   }
 
   return folderSegments[0];
+}
+
+function toReadableLabel(value) {
+  return String(value || '')
+    .replace(/[:/_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+}
+
+function componentLabel(component) {
+  const map = {
+    module: 'Module',
+    controller: 'API Controller',
+    service: 'Application Service',
+    repository: 'Repository',
+    entity: 'Data Model',
+    dto: 'DTO Contract',
+    'cross-cutting': 'Cross-Cutting',
+    persistence: 'Persistence',
+    configuration: 'Configuration',
+    'ui-components': 'UI Components',
+    'ui-pages': 'UI Pages',
+    'ui-state': 'UI State',
+    'frontend-core': 'Frontend Core',
+    'api-interface': 'API Interface',
+    'api-core': 'API Core',
+    'application-services': 'Application Services',
+    'data-migrations': 'Data Migrations',
+    'data-models': 'Data Models',
+    'data-repositories': 'Data Repositories',
+    'data-access': 'Data Access',
+    'shared-utils': 'Shared Utilities',
+    'shared-contracts': 'Shared Contracts',
+    'shared-core': 'Shared Core',
+    unclassified: 'Unclassified',
+    support: 'Support',
+  };
+
+  return map[component] ?? toReadableLabel(component);
 }
 
 function inferArchitectureComponent(filePath, role) {
@@ -544,10 +700,12 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
       blockMap.set(blockId, {
         id: blockId,
         data: {
-          label: `${feature} / ${component}`,
+          label: `${toReadableLabel(feature)} • ${componentLabel(component)}`,
           ext: 'arch',
           language: 'architecture',
           directory: feature,
+          moduleLabel: toReadableLabel(feature),
+          componentLabel: componentLabel(component),
           imports: 0,
           exports: 0,
           role,
@@ -565,7 +723,10 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
 
   for (const record of fileRecords) {
     const feature = normalizeFeatureName(record.id);
-    const componentInfo = inferArchitectureComponent(record.id, record.role);
+    const componentInfo = {
+      component: record.component ?? inferArchitectureComponent(record.id, record.role).component,
+      role: record.componentRole ?? inferArchitectureComponent(record.id, record.role).role,
+    };
     const blockId = `arch:${feature}:${componentInfo.component}`;
     const block = ensureBlock(blockId, feature, componentInfo.component, componentInfo.role);
 
@@ -642,34 +803,45 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
 }
 
 async function classifyArchitectureRole(filePath, content, extension, dependencyCount, exportCount) {
+  const aiAssistEnabled = String(process.env.archifind_AI_ASSIST ?? 'true').toLowerCase() !== 'false';
   const heuristicRole = inferArchitectureRoleHeuristically(filePath, content, extension);
-  const aiAssistEnabled = String(process.env.archifind_AI_ASSIST || '').toLowerCase() === 'true';
 
-  if (!process.env.HF_TOKEN) {
-    return heuristicRole;
+  if (aiAssistEnabled && getHuggingFaceToken()) {
+    const aiRole = await classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount);
+    const normalizedAiRole = normalizeArchitectureRole(aiRole);
+
+    // Use AI result if it's not unknown, otherwise fallback to heuristic
+    if (normalizedAiRole !== 'unknown') {
+      console.log(`[ROLE] ${filePath}: AI=${normalizedAiRole} (was heuristic: ${heuristicRole})`);
+      return normalizedAiRole;
+    }
   }
 
-  const aiRole = await classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount);
-  const normalizedAiRole = normalizeArchitectureRole(aiRole);
-
-  if (heuristicRole === 'unknown') {
-    return normalizedAiRole;
-  }
-
-  if (!aiAssistEnabled || normalizedAiRole === 'unknown') {
-    return heuristicRole;
-  }
-
-  // Keep deterministic heuristics by default; AI only refines broad categories.
-  if (heuristicRole === 'shared' || heuristicRole === 'service' || heuristicRole === 'unknown') {
-    return normalizedAiRole;
-  }
-
+  // Fallback: use heuristic if AI is disabled, no token, or AI returned unknown
   return heuristicRole;
+}
+
+async function classifyArchitectureComponent(filePath, role, content, dependencyCount, exportCount) {
+  const aiComponentsEnabled = String(process.env.archifind_AI_COMPONENTS ?? 'true').toLowerCase() !== 'false';
+  const heuristicComponent = inferArchitectureComponent(filePath, role);
+
+  if (aiComponentsEnabled && getHuggingFaceToken()) {
+    const aiComponent = await classifyArchitectureComponentWithHuggingFace(filePath, role, content, dependencyCount, exportCount);
+
+    if (aiComponent && aiComponent !== 'unclassified') {
+      const aiRole = componentToRole(aiComponent, role);
+      return { component: aiComponent, role: aiRole };
+    }
+  }
+
+  return heuristicComponent;
 }
 
 export async function analyzeProject(rootPath, options = {}) {
   const absoluteRoot = path.resolve(rootPath);
+  const MAX_FILE_SIZE = 500 * 1024;
+  const MAX_NODES = 1000;
+
   const files = await fg(['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'], {
     cwd: absoluteRoot,
     ignore: ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.*/**'],
@@ -680,16 +852,35 @@ export async function analyzeProject(rootPath, options = {}) {
   const fileEdges = [];
   const fileLookup = new Map();
   const groupCounts = new Map();
-  const fileContents = new Map();
   const fileRecords = [];
   const requestedGraphMode = String(options.graphMode || process.env.archifind_GRAPH_MODE || 'architecture').toLowerCase();
 
   for (const file of files) {
+    if (nodes.length >= MAX_NODES) break;
+
+    let stat;
+    try {
+      stat = fs.statSync(file);
+      if (stat.size > MAX_FILE_SIZE) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
     const relativePath = normalizeRelativePath(absoluteRoot, file);
     const extension = path.extname(file).slice(1).toLowerCase();
-    const content = fs.readFileSync(file, 'utf-8');
+
+    let content;
+    try {
+      content = fs.readFileSync(file, 'utf-8');
+    } catch {
+      continue;
+    }
+
     const { dependencies, exports } = parseFile(content, path.extname(file).toLowerCase());
     const role = normalizeArchitectureRole(await classifyArchitectureRole(relativePath, content, path.extname(file).toLowerCase(), dependencies.length, exports.length));
+    const componentInfo = await classifyArchitectureComponent(relativePath, role, content, dependencies.length, exports.length);
     const layer = roleToLayer(role);
 
     if (HIDDEN_ROLES.has(role)) {
@@ -697,7 +888,6 @@ export async function analyzeProject(rootPath, options = {}) {
     }
 
     fileLookup.set(relativePath, file);
-    fileContents.set(relativePath, content);
     groupCounts.set(role, (groupCounts.get(role) ?? 0) + 1);
 
     const node = {
@@ -707,11 +897,12 @@ export async function analyzeProject(rootPath, options = {}) {
         ext: extension,
         language: extension === 'tsx' || extension === 'ts' ? 'typescript' : extension === 'jsx' || extension === 'js' ? 'javascript' : extension === 'py' ? 'python' : extension === 'go' ? 'go' : extension,
         directory: toPosixPath(path.dirname(relativePath)),
-        imports: 0,
-        exports: 0,
+        imports: dependencies.length,
+        exports: exports.length,
         role,
         layer,
         kind: extension,
+        symbols: exports.slice(0, 8),
       },
       position: { x: 0, y: 0 },
     };
@@ -720,30 +911,29 @@ export async function analyzeProject(rootPath, options = {}) {
     fileRecords.push({
       id: relativePath,
       file,
-      content,
       extension: path.extname(file).toLowerCase(),
       dependencies,
       exports,
       role,
       layer,
+      component: componentInfo.component,
+      componentRole: componentInfo.role,
     });
   }
 
   const nodeById = new Map(nodes.map(node => [node.id, node]));
 
-  for (const file of files) {
-    const relativePath = normalizeRelativePath(absoluteRoot, file);
-    const extension = path.extname(file).toLowerCase();
-    const content = fileContents.get(relativePath) ?? fs.readFileSync(file, 'utf-8');
-    const { dependencies, exports } = parseFile(content, extension);
+  for (const record of fileRecords) {
+    const file = record.file;
+    const relativePath = record.id;
+    const extension = record.extension;
+    const dependencies = record.dependencies;
     const language = extension === '.py' ? 'python' : extension === '.go' ? 'go' : 'js';
     const seenTargets = new Set();
 
     const node = nodeById.get(relativePath);
     if (node) {
-      node.data.imports = dependencies.length;
-      node.data.exports = exports.length;
-      node.data.symbols = exports;
+      node.data.symbols = record.exports.slice(0, 8);
     }
 
     for (const dependency of dependencies) {

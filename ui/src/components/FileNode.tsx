@@ -39,9 +39,15 @@ function FileNode({ data, selected }: { data: any; selected?: boolean }) {
   const bg = theme === 'dark' ? 'rgba(17,17,17,0.96)' : (ROLE_BG[role] ?? 'rgba(244,244,244,0.96)');
   const textColor = theme === 'dark' ? '#f5f5f5' : '#111111';
   const mutedColor = theme === 'dark' ? '#b5b5b5' : '#555555';
-  const parts = data.label.split('/');
-  const name = parts[parts.length - 1];
+  const parts = String(data.label || '').split('/');
+  const name = parts[parts.length - 1] || data.label;
   const dir = parts.slice(0, -1).join('/');
+  const isArchitectureNode = data.language === 'architecture';
+  const moduleLabel = data.moduleLabel || (data.directory && data.directory !== '.' ? data.directory : 'Core');
+  const componentLabel = data.componentLabel || name;
+  const roleLabel = role === 'unknown' ? 'CORE' : String(role).toUpperCase();
+  const secondaryLabel = isArchitectureNode ? componentLabel : name;
+  const tertiaryLabel = isArchitectureNode ? moduleLabel : dir;
 
   return (
     <div
@@ -58,9 +64,9 @@ function FileNode({ data, selected }: { data: any; selected?: boolean }) {
         <FileCode2 size={16} />
       </div>
       <div className="node-content">
-        <div className="node-name" title={data.label}>{name}</div>
+        <div className="node-name" title={isArchitectureNode ? `${moduleLabel} ${componentLabel}` : data.label}>{secondaryLabel}</div>
         <div className="node-meta-row">
-          <span className="node-ext" style={{ color: mutedColor }}>{role.toUpperCase()}</span>
+          <span className="node-ext" style={{ color: mutedColor }}>{roleLabel}</span>
           {typeof data.imports === 'number' && (
             <span className="node-connection-count">
               <Hash size={11} />
@@ -68,7 +74,7 @@ function FileNode({ data, selected }: { data: any; selected?: boolean }) {
             </span>
           )}
         </div>
-        {dir && <div className="node-dir" title={dir}><FolderGit2 size={11} />{dir}</div>}
+        {tertiaryLabel && <div className="node-dir" title={tertiaryLabel}><FolderGit2 size={11} />{tertiaryLabel}</div>}
       </div>
       <div className="node-pill" style={{ borderColor, color: textColor }}>
         <Landmark size={11} />

@@ -27,16 +27,35 @@ export default function DetailPanel({ node, onClose }: Props) {
   const parts = node.id.split('/');
   const fileName = parts[parts.length - 1];
   const dir = parts.slice(0, -1).join('/');
+  const isArchNode = node.id.startsWith('arch:');
+  const componentLabel = node.data.componentLabel || (isArchNode ? 'Component' : 'File');
+  const moduleLabel = node.data.moduleLabel || 'Module';
 
   return (
     <div className="detail-panel">
       <div className="detail-header">
         <div className="detail-title">
           <File size={14} />
-          <span>Architecture Details</span>
+          <span>Details</span>
         </div>
         <button className="close-btn" onClick={onClose} aria-label="Close details"><X size={14} /></button>
       </div>
+
+      {/* Module classification (AI-generated) */}
+      {moduleLabel && (
+        <div className="detail-ai-section">
+          <div className="detail-ai-label">Module (AI-classified)</div>
+          <div className="detail-ai-value">{moduleLabel}</div>
+        </div>
+      )}
+
+      {/* Component classification (AI-generated) */}
+      {componentLabel && (
+        <div className="detail-ai-section">
+          <div className="detail-ai-label">Component Type (AI-classified)</div>
+          <div className="detail-ai-value">{componentLabel}</div>
+        </div>
+      )}
 
       <div className="detail-badge">
         <Code2 size={12} />

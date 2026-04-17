@@ -1,5 +1,6 @@
 import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, SunMedium, Workflow } from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import ArchitectureChat from './components/ArchitectureChat';
 import DetailPanel from './components/DetailPanel';
 import GraphCanvas from './components/GraphCanvas';
 import type { GraphData, NodeData } from './types';
@@ -9,22 +10,26 @@ const THEME_STORAGE_KEY = 'archifind-theme';
 const GRAPH_MODE_STORAGE_KEY = 'archifind-graph-mode';
 
 const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
-const BACKEND_LAYERS = new Set(['interface', 'application', 'data']);
+const ROLE_LABELS: Record<string, string> = {
+  database: 'Database',
+  orm: 'ORM',
+  api: 'API',
+  service: 'Service',
+  frontend: 'Frontend',
+  shared: 'Shared',
+  config: 'Config',
+  infra: 'Infra',
+  tests: 'Tests',
+  docs: 'Docs',
+  script: 'Scripts',
+  unknown: 'Core/Other',
+};
 
-function roleVisibleInStack(layer: string, role: string, stackMode: 'full' | 'frontend' | 'backend') {
-  if (stackMode === 'full') {
-    return true;
-  }
 
-  if (stackMode === 'frontend') {
-    return layer === 'presentation' || role === 'frontend';
-  }
-
-  return BACKEND_LAYERS.has(layer) || ['api', 'service', 'database', 'orm'].includes(role);
-}
 
 export default function App() {
   const [graph, setGraph] = useState<GraphData>(DEFAULT_GRAPH);
+  const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -39,7 +44,6 @@ export default function App() {
     return storedTheme === 'light' ? 'light' : 'dark';
   });
   const [activeRole, setActiveRole] = useState<string>('all');
-  const [stackMode, setStackMode] = useState<'full' | 'frontend' | 'backend'>('full');
   const [graphMode, setGraphMode] = useState<'architecture' | 'file'>(() => {
     if (typeof window === 'undefined') {
       return 'architecture';
@@ -48,27 +52,40 @@ export default function App() {
     const storedMode = window.localStorage.getItem(GRAPH_MODE_STORAGE_KEY);
     return storedMode === 'file' ? 'file' : 'architecture';
   });
+  const [layoutMode, setLayoutMode] = useState<'modules' | 'global'>('modules');
   const deferredQuery = useDeferredValue(query);
   const isArchitectureGraph = graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
 
   const refreshGraph = useCallback(async (mode: 'architecture' | 'file') => {
+    console.log(`[SWITCH] Switching to mode: ${mode}`);
+    const cached = graphCache[mode];
+    if (cached) {
+      console.log(`[CACHE] Using cached graph for mode: ${mode}`);
+      setGraph(cached);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
+      const ts = performance.now();
       const response = await fetch(`/api/graph?mode=${encodeURIComponent(mode)}`);
       if (!response.ok) {
         throw new Error(`Failed to load graph (${response.status})`);
       }
 
       const data = await response.json();
+      console.log(`[PERF] Graph loaded in ${(performance.now() - ts).toFixed(1)}ms`);
       setGraph(data);
+      setGraphCache(prev => ({ ...prev, [mode]: data }));
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : 'Failed to load graph');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [graphCache]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -117,10 +134,6 @@ export default function App() {
       const role = node.data.role;
       const layer = node.data.layer;
 
-      if (!roleVisibleInStack(layer, role, stackMode)) {
-        return;
-      }
-
       counts.set(role, (counts.get(role) ?? 0) + 1);
       if (!layers.has(role)) {
         layers.set(role, layer);
@@ -147,7 +160,7 @@ export default function App() {
       }));
 
     return [...ordered, ...extras];
-  }, [graph.nodes, stackMode]);
+  }, [graph.nodes]);
 
   const effectiveActiveRole = useMemo(() => {
     if (activeRole === 'all') {
@@ -216,36 +229,6 @@ export default function App() {
           </button>
         </div>
 
-        <div className="stack-switch" role="tablist" aria-label="Architecture view mode">
-          <button
-            className={stackMode === 'full' ? 'stack-btn active' : 'stack-btn'}
-            onClick={() => {
-              setStackMode('full');
-              setActiveRole('all');
-            }}
-          >
-            Full stack
-          </button>
-          <button
-            className={stackMode === 'frontend' ? 'stack-btn active' : 'stack-btn'}
-            onClick={() => {
-              setStackMode('frontend');
-              setActiveRole('all');
-            }}
-          >
-            Frontend
-          </button>
-          <button
-            className={stackMode === 'backend' ? 'stack-btn active' : 'stack-btn'}
-            onClick={() => {
-              setStackMode('backend');
-              setActiveRole('all');
-            }}
-          >
-            Backend
-          </button>
-        </div>
-
         <div className="graph-switch" role="tablist" aria-label="Graph detail mode">
           <button
             className={graphMode === 'architecture' ? 'stack-btn active' : 'stack-btn'}
@@ -269,8 +252,23 @@ export default function App() {
           </button>
         </div>
 
+        <div className="layout-switch" role="tablist" aria-label="Layout mode">
+          <button
+            className={layoutMode === 'modules' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => setLayoutMode('modules')}
+          >
+            Module lanes
+          </button>
+          <button
+            className={layoutMode === 'global' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => setLayoutMode('global')}
+          >
+            Compact graph
+          </button>
+        </div>
+
         <div className="filter-hint">
-          Scope first, then role. Diagram mode controls abstraction level: Architecture shows system blocks, File details shows direct file dependencies.
+          Scope first, then role. Module lanes split modules side-by-side with cross-module connectors. Compact graph keeps one dense global layout.
         </div>
 
         <div className="role-strip">
@@ -285,7 +283,7 @@ export default function App() {
               onClick={() => setActiveRole(group.id)}
               title={group.layer}
             >
-              <span>{group.label}</span>
+              <span>{ROLE_LABELS[group.id] ?? group.label}</span>
               <span className="role-count">{group.count}</span>
             </button>
           ))}
@@ -333,7 +331,7 @@ export default function App() {
           query={deferredQuery}
           minimumConnections={minimumConnections}
           activeRole={effectiveActiveRole}
-          stackMode={stackMode}
+          layoutMode={layoutMode}
           theme={theme}
         />
 
@@ -345,6 +343,8 @@ export default function App() {
           </aside>
         )}
       </main>
+
+      <ArchitectureChat graphMode={graphMode} selectedNode={selectedNode} />
     </div>
   );
 }

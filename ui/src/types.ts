@@ -9,6 +9,8 @@ export interface NodeData {
     layer: string;
     imports: number;
     exports: number;
+    moduleLabel?: string;
+    componentLabel?: string;
     kind?: string;
     symbols?: string[];
     files?: string[];
