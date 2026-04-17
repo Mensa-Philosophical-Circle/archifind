@@ -24,14 +24,30 @@ export async function startServer(targetDir, port) {
 
   await refreshGraph();
 
+  const ignoredPath = (watchedPath) => {
+    const normalized = watchedPath.replace(/\\/g, '/');
+    return normalized.includes('/node_modules/')
+      || normalized.includes('/dist/')
+      || normalized.includes('/vendor/')
+      || normalized.includes('/.git/');
+  };
+
   const watcher = chokidar.watch(absoluteTargetDir, {
-    ignored: ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.git/**'],
+    ignored: ignoredPath,
     ignoreInitial: true,
   });
 
   watcher.on('add', refreshGraph);
   watcher.on('change', refreshGraph);
   watcher.on('unlink', refreshGraph);
+  watcher.on('error', (error) => {
+    if (error && error.code === 'ENOSPC') {
+      console.warn('[archfind] File watcher disabled: system watcher limit reached (ENOSPC). API data remains available; use POST /api/graph/refresh to update manually.');
+      return;
+    }
+
+    console.warn('[archfind] Watcher error:', error?.message ?? error);
+  });
 
   app.get('/api/graph', async (req, res) => {
     try {
