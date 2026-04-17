@@ -51,21 +51,21 @@ export async function startServer(targetDir, port) {
   });
 
   watcher.on('add', () => {
-    void refreshAllKnownModes().catch(error => console.warn('[archfind] refresh failed:', error?.message ?? error));
+    void refreshAllKnownModes().catch(error => console.warn('[archifind] refresh failed:', error?.message ?? error));
   });
   watcher.on('change', () => {
-    void refreshAllKnownModes().catch(error => console.warn('[archfind] refresh failed:', error?.message ?? error));
+    void refreshAllKnownModes().catch(error => console.warn('[archifind] refresh failed:', error?.message ?? error));
   });
   watcher.on('unlink', () => {
-    void refreshAllKnownModes().catch(error => console.warn('[archfind] refresh failed:', error?.message ?? error));
+    void refreshAllKnownModes().catch(error => console.warn('[archifind] refresh failed:', error?.message ?? error));
   });
   watcher.on('error', (error) => {
     if (error && error.code === 'ENOSPC') {
-      console.warn('[archfind] File watcher disabled: system watcher limit reached (ENOSPC). API data remains available; use POST /api/graph/refresh to update manually.');
+      console.warn('[archifind] File watcher disabled: system watcher limit reached (ENOSPC). API data remains available; use POST /api/graph/refresh to update manually.');
       return;
     }
 
-    console.warn('[archfind] Watcher error:', error?.message ?? error);
+    console.warn('[archifind] Watcher error:', error?.message ?? error);
   });
 
   app.get('/api/graph', async (req, res) => {
@@ -109,7 +109,7 @@ export async function startServer(targetDir, port) {
     const server = app.listen(port, () => {
       const url = `http://localhost:${port}`;
       console.log(`
-archfind is running
+archifind is running
 Scanning: ${absoluteTargetDir}
 UI:       ${url}
       `);

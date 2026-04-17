@@ -643,7 +643,7 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
 
 async function classifyArchitectureRole(filePath, content, extension, dependencyCount, exportCount) {
   const heuristicRole = inferArchitectureRoleHeuristically(filePath, content, extension);
-  const aiAssistEnabled = String(process.env.ARCHFIND_AI_ASSIST || '').toLowerCase() === 'true';
+  const aiAssistEnabled = String(process.env.archifind_AI_ASSIST || '').toLowerCase() === 'true';
 
   if (!process.env.HF_TOKEN) {
     return heuristicRole;
@@ -682,7 +682,7 @@ export async function analyzeProject(rootPath, options = {}) {
   const groupCounts = new Map();
   const fileContents = new Map();
   const fileRecords = [];
-  const requestedGraphMode = String(options.graphMode || process.env.ARCHFIND_GRAPH_MODE || 'architecture').toLowerCase();
+  const requestedGraphMode = String(options.graphMode || process.env.archifind_GRAPH_MODE || 'architecture').toLowerCase();
 
   for (const file of files) {
     const relativePath = normalizeRelativePath(absoluteRoot, file);

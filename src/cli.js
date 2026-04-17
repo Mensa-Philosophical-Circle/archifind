@@ -4,7 +4,7 @@ import open from 'open';
 import { startServer } from './server.js';
 
 program
-  .name('archfind')
+  .name('archifind')
   .description('A cross-platform CLI tool that scans your project and visualizes architecture visually')
   .version('1.0.0');
 

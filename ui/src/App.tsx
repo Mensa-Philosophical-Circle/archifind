@@ -5,8 +5,8 @@ import GraphCanvas from './components/GraphCanvas';
 import type { GraphData, NodeData } from './types';
 
 const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
-const THEME_STORAGE_KEY = 'archfind-theme';
-const GRAPH_MODE_STORAGE_KEY = 'archfind-graph-mode';
+const THEME_STORAGE_KEY = 'archifind-theme';
+const GRAPH_MODE_STORAGE_KEY = 'archifind-graph-mode';
 
 const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
 const BACKEND_LAYERS = new Set(['interface', 'application', 'data']);
@@ -166,7 +166,7 @@ export default function App() {
               <LayoutGrid size={18} />
             </div>
             <div>
-              <div className="brand-title">archfind</div>
+              <div className="brand-title">archifind</div>
               <div className="brand-subtitle">architecture map</div>
             </div>
             <button
