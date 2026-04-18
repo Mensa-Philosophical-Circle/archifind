@@ -79,17 +79,6 @@ You can also run it directly with `node src/cli.js .` if you do not want a linke
 
 ## If You Want a Real Brew Formula
 
-`brew install archifind` now works through the public tap path.
-
-This repo now includes a Homebrew formula at [Formula/archifind.rb](Formula/archifind.rb). To use it, tap this repository and then install from brew:
-
-```bash
-brew tap Mensa-Philosophical-Circle/archifind https://github.com/Mensa-Philosophical-Circle/archifind.git
-brew install archifind
-```
-
-You can also install using the fully qualified formula name:
-
 ```bash
 brew install mensa-philosophical-circle/archifind/archifind
 ```
