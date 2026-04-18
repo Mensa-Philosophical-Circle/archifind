@@ -22,7 +22,6 @@ function getClassifierModelName() {
 }
 
 function getChatModelName() {
-  // return process.env.HF_CHAT_MODEL || "microsoft/Phi-3-mini-4k-instruct";
   return process.env.HF_CHAT_MODEL || "Qwen/Qwen2.5-72B-Instruct";
 }
 

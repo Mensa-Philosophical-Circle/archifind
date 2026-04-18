@@ -305,19 +305,20 @@ program
       }
       process.env.ARCHIFIND_INCLUDE_ENV = includeEnv ? "true" : "false";
 
-      const envPath = path.resolve(process.cwd(), ".env");
-      if (fs.existsSync(envPath)) {
-        const envContent = fs.readFileSync(envPath, "utf-8");
-        envContent.split("\n").forEach((line) => {
-          const [key, ...values] = line.split("=");
-          if (key && values.length > 0 && !process.env[key.trim()]) {
-            process.env[key.trim()] = values
-              .join("=")
-              .trim()
-              .replace(/^["']|["']$/g, "");
-          }
-        });
-      }
+      // Alredy loaded!, Intentionally commented out for reference
+      // const envPath = path.resolve(process.cwd(), ".env");
+      // if (fs.existsSync(envPath)) {
+      //   const envContent = fs.readFileSync(envPath, "utf-8");
+      //   envContent.split("\n").forEach((line) => {
+      //     const [key, ...values] = line.split("=");
+      //     if (key && values.length > 0 && !process.env[key.trim()]) {
+      //       process.env[key.trim()] = values
+      //         .join("=")
+      //         .trim()
+      //         .replace(/^["']|["']$/g, "");
+      //     }
+      //   });
+      // }
 
       process.env.archifind_AI_ASSIST = options.aiAssist ? "true" : "false";
       process.env.archifind_AI_COMPONENTS = options.aiComponents
