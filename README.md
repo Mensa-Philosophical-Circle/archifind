@@ -1,4 +1,4 @@
-# archifind
+# Archifind
 
 `archifind` is a CLI that scans a codebase, infers how the project is structured, and serves that information as an interactive architecture map in the browser.
 
@@ -10,6 +10,23 @@ It is built for people who want a fast way to understand a repo without reading 
 - serving an interactive UI from a local Express server
 - refreshing the graph when files change
 - optionally using Hugging Face models for AI-assisted classification and chat
+
+## Quick Start
+
+Get started in 30 seconds:
+
+```bash
+npm install -g archifind
+archifind /path/to/your/project
+```
+
+Or run without installing:
+
+```bash
+npx archifind /path/to/your/project
+```
+
+See [QUICKSTART.md](QUICKSTART.md) for more examples.
 
 ## What It Does
 
@@ -30,97 +47,64 @@ The CLI also exposes AI-related options. If you provide a Hugging Face token, `a
 
 ## Install
 
-There are two ways to use `archifind` today:
+### Quick Start (Recommended)
 
-1. run it from a local checkout while developing
-2. install it as a local command on your machine
-
-## macOS
-
-If you already use Homebrew, install Node.js first:
+**Option 1: Global Installation**
 
 ```bash
-brew install node
+npm install -g archifind
+archifind /path/to/project
 ```
 
-Then install `archifind` from the checked-out project directory:
+**Option 2: Run Without Installing**
 
 ```bash
-cd /path/to/archifind
+npx archifind /path/to/project
+```
+
+Both methods work on macOS, Linux, and Windows with Node.js >=18 installed.
+
+### Development Setup
+
+If you want to develop archifind locally:
+
+```bash
+git clone https://github.com/Mensa-Philosophical-Circle/archifind.git
+cd archifind
 npm install
-npm link
+npm run start .          # Run CLI directly
+npm link                 # Create global command from source
 ```
 
-That gives you a global `archifind` command on macOS without pulling the project from GitHub every time.
-
-## Linux
-
-Install Node.js with your package manager, then link the CLI locally:
+Then use the development version:
 
 ```bash
-cd /path/to/archifind
-npm install
-npm link
+archifind /path/to/project
 ```
 
-If you want a shell-level command instead of a global link, add a wrapper function in your shell profile.
+### Requirements
 
-## Windows
+- **Node.js** >=18 ([Install Node.js](https://nodejs.org/))
+- **npm** (comes with Node.js)
 
-Install Node.js with the official installer or `winget`, then run:
-
-```powershell
-cd C:\path\to\archifind
-npm install
-npm link
-```
-
-You can also run it directly with `node src/cli.js .` if you do not want a linked command.
-
-## If You Want a Real Brew Formula
+To check your versions:
 
 ```bash
-brew install mensa-philosophical-circle/archifind/archifind
+node --version
+npm --version
 ```
 
-If you want one command that does both steps, run the helper script:
+### Homebrew Installation (Optional)
+
+If you prefer Homebrew, you can tap the formula repository:
 
 ```bash
-bash scripts/install-homebrew.sh
+brew tap Mensa-Philosophical-Circle/archifind
+brew install archifind
+archifind /path/to/project
 ```
 
-Or through npm:
-
-```bash
-npm run brew:install
-```
-
-The helper script handles the common case where Homebrew reports a Node linking warning even though `archifind` finished installing.
-
-For maintainers:
-
-- Bottle workflow: [.github/workflows/homebrew-bottle.yml](.github/workflows/homebrew-bottle.yml)
-- Audit workflow: [.github/workflows/homebrew-audit.yml](.github/workflows/homebrew-audit.yml)
-- Core submission checklist: [docs/homebrew-core-checklist.md](docs/homebrew-core-checklist.md)
-- Core PR template: [docs/homebrew-core-pr-template.md](docs/homebrew-core-pr-template.md)
-
-Prepare release tarball fields for the formula after tagging:
-
-```bash
-./scripts/prepare-homebrew-release.sh v1.0.1
-```
-
-You can still configure the local install path from the CLI itself:
-
-```bash
-archifind setup
-```
-
-To write the shell snippet into your profile automatically:
-
-```bash
-archifind setup --write
-```
+However, npm methods above are faster and don't require Homebrew.
 
 ## Usage
 

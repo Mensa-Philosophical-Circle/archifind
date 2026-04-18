@@ -1,54 +1,54 @@
 name: Sync Formula On Push
 
 on:
-    push:
-        branches:
-            - production
+  push:
+    branches:
+      - production
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    sync:
-        if: github.actor != 'github-actions[bot]'
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-            - name: Configure git
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-            - name: Create push tag
-              id: vars
-              run: |
-                  SHORT_SHA="${GITHUB_SHA::7}"
-                  TAG="autopush-${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
-                  echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+      - name: Create push tag
+        id: vars
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAG="autopush-${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-            - name: Push tag
-              run: |
-                  git tag -a "${{ steps.vars.outputs.tag }}" -m "Auto tag for ${GITHUB_SHA}"
-                  git push origin "${{ steps.vars.outputs.tag }}"
+      - name: Push tag
+        run: |
+          git tag -a "${{ steps.vars.outputs.tag }}" -m "Auto tag for ${GITHUB_SHA}"
+          git push origin "${{ steps.vars.outputs.tag }}"
 
-            - name: Update formula from tag
-              env:
-                  REPO: ${{ github.repository }}
-              run: |
-                  chmod +x scripts/update-formula-from-tag.sh
-                  ./scripts/update-formula-from-tag.sh "${{ steps.vars.outputs.tag }}"
+      - name: Update formula from tag
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          chmod +x scripts/update-formula-from-tag.sh
+          ./scripts/update-formula-from-tag.sh "${{ steps.vars.outputs.tag }}"
 
-            - name: Commit formula updates
-              run: |
-                  if git diff --quiet Formula/archifind.rb; then
-                    echo "No formula changes detected."
-                    exit 0
-                  fi
+      - name: Commit formula updates
+        run: |
+          if git diff --quiet Formula/archifind.rb; then
+            echo "No formula changes detected."
+            exit 0
+          fi
 
-                  git add Formula/archifind.rb
-                  git commit -m "chore(formula): sync to ${{ steps.vars.outputs.tag }} [skip ci]"
-                  git push origin HEAD:production
+          git add Formula/archifind.rb
+          git commit -m "chore(formula): sync to ${{ steps.vars.outputs.tag }} [skip ci]"
+          git push origin HEAD:production

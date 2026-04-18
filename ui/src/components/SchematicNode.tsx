@@ -21,9 +21,7 @@ export const SchematicNode = ({ data, selected }: any) => {
   return (
     <div className={`schematic-node ${selected ? 'selected' : ''}`}>
       <Handle type="target" position={Position.Left} style={{ visibility: 'hidden' }} />
-      <div className="node-icon">
-        {getIcon(data.type)}
-      </div>
+      <div className="node-icon">{getIcon(data.type)}</div>
       <div className="node-label" title={data.label}>
         {data.label.split('/').pop()}
       </div>

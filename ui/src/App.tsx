@@ -1,4 +1,16 @@
-import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, Sparkles, SunMedium, Workflow } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Code2,
+  Filter,
+  Layers3,
+  LayoutGrid,
+  MoonStar,
+  RefreshCw,
+  Search,
+  Sparkles,
+  SunMedium,
+  Workflow,
+} from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import ArchitectureChat from './components/ArchitectureChat';
 import DetailPanel from './components/DetailPanel';
@@ -9,7 +21,20 @@ const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
 const THEME_STORAGE_KEY = 'archifind-theme';
 const GRAPH_MODE_STORAGE_KEY = 'archifind-graph-mode';
 
-const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
+const DEFAULT_ROLE_ORDER = [
+  'database',
+  'orm',
+  'api',
+  'service',
+  'frontend',
+  'shared',
+  'config',
+  'infra',
+  'tests',
+  'docs',
+  'script',
+  'unknown',
+];
 const ROLE_LABELS: Record<string, string> = {
   database: 'Database',
   orm: 'ORM',
@@ -24,8 +49,6 @@ const ROLE_LABELS: Record<string, string> = {
   script: 'Scripts',
   unknown: 'Core/Other',
 };
-
-
 
 export default function App() {
   const [graph, setGraph] = useState<GraphData>(DEFAULT_GRAPH);
@@ -54,42 +77,46 @@ export default function App() {
   });
   const [layoutMode, setLayoutMode] = useState<'modules' | 'global'>('modules');
   const deferredQuery = useDeferredValue(query);
-  const isArchitectureGraph = graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
+  const isArchitectureGraph =
+    graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
 
-  const refreshGraph = useCallback(async (mode: 'architecture' | 'file', options: { aiNative?: boolean } = {}) => {
-    console.log(`[SWITCH] Switching to mode: ${mode}${options.aiNative ? ' (AI Native)' : ''}`);
-    const cached = graphCache[mode];
-    if (cached && !options.aiNative) {
-      console.log(`[CACHE] Using cached graph for mode: ${mode}`);
-      setGraph(cached);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const ts = performance.now();
-      const url = options.aiNative 
-        ? `/api/graph/refresh?mode=${encodeURIComponent(mode)}&aiNative=true`
-        : `/api/graph?mode=${encodeURIComponent(mode)}`;
-        
-      const response = await fetch(url, { method: options.aiNative ? 'POST' : 'GET' });
-      if (!response.ok) {
-        throw new Error(`Failed to load graph (${response.status})`);
+  const refreshGraph = useCallback(
+    async (mode: 'architecture' | 'file', options: { aiNative?: boolean } = {}) => {
+      console.log(`[SWITCH] Switching to mode: ${mode}${options.aiNative ? ' (AI Native)' : ''}`);
+      const cached = graphCache[mode];
+      if (cached && !options.aiNative) {
+        console.log(`[CACHE] Using cached graph for mode: ${mode}`);
+        setGraph(cached);
+        setLoading(false);
+        return;
       }
 
-      const data = await response.json();
-      console.log(`[PERF] Graph loaded in ${(performance.now() - ts).toFixed(1)}ms`);
-      setGraph(data);
-      setGraphCache(prev => ({ ...prev, [mode]: data }));
-    } catch (fetchError) {
-      setError(fetchError instanceof Error ? fetchError.message : 'Failed to load graph');
-    } finally {
-      setLoading(false);
-    }
-  }, [graphCache]);
+      setLoading(true);
+      setError(null);
+
+      try {
+        const ts = performance.now();
+        const url = options.aiNative
+          ? `/api/graph/refresh?mode=${encodeURIComponent(mode)}&aiNative=true`
+          : `/api/graph?mode=${encodeURIComponent(mode)}`;
+
+        const response = await fetch(url, { method: options.aiNative ? 'POST' : 'GET' });
+        if (!response.ok) {
+          throw new Error(`Failed to load graph (${response.status})`);
+        }
+
+        const data = await response.json();
+        console.log(`[PERF] Graph loaded in ${(performance.now() - ts).toFixed(1)}ms`);
+        setGraph(data);
+        setGraphCache((prev) => ({ ...prev, [mode]: data }));
+      } catch (fetchError) {
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load graph');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [graphCache]
+  );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -114,7 +141,7 @@ export default function App() {
       return null;
     }
 
-    return graph.nodes.find(node => node.id === selectedNodeId) ?? null;
+    return graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
   }, [graph.nodes, selectedNodeId]);
 
   const stats = useMemo(() => {
@@ -144,19 +171,17 @@ export default function App() {
       }
     });
 
-    const ordered = DEFAULT_ROLE_ORDER
-      .filter(role => counts.has(role))
-      .map(role => ({
-        id: role,
-        label: role,
-        count: counts.get(role) ?? 0,
-        layer: layers.get(role) ?? role,
-      }));
+    const ordered = DEFAULT_ROLE_ORDER.filter((role) => counts.has(role)).map((role) => ({
+      id: role,
+      label: role,
+      count: counts.get(role) ?? 0,
+      layer: layers.get(role) ?? role,
+    }));
 
     const extras = Array.from(counts.keys())
-      .filter(role => !DEFAULT_ROLE_ORDER.includes(role))
+      .filter((role) => !DEFAULT_ROLE_ORDER.includes(role))
       .sort()
-      .map(role => ({
+      .map((role) => ({
         id: role,
         label: role,
         count: counts.get(role) ?? 0,
@@ -171,7 +196,7 @@ export default function App() {
       return 'all';
     }
 
-    return architectureGroups.some(group => group.id === activeRole) ? activeRole : 'all';
+    return architectureGroups.some((group) => group.id === activeRole) ? activeRole : 'all';
   }, [activeRole, architectureGroups]);
 
   return (
@@ -188,7 +213,9 @@ export default function App() {
             </div>
             <button
               className="theme-toggle"
-              onClick={() => setTheme(currentTheme => (currentTheme === 'dark' ? 'light' : 'dark'))}
+              onClick={() =>
+                setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'))
+              }
               aria-label="Toggle theme"
               title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             >
@@ -208,7 +235,7 @@ export default function App() {
             <input
               className="search-input"
               value={query}
-              onChange={event => setQuery(event.target.value)}
+              onChange={(event) => setQuery(event.target.value)}
               placeholder="Search files, folders, or extensions"
             />
           </label>
@@ -223,11 +250,15 @@ export default function App() {
               min="0"
               max="8"
               value={minimumConnections}
-              onChange={event => setMinimumConnections(Number(event.target.value))}
+              onChange={(event) => setMinimumConnections(Number(event.target.value))}
             />
           </label>
 
-          <button className="refresh-btn ai-btn" onClick={() => void refreshGraph('architecture', { aiNative: true })} title="Regenerate architecture using AI reasoning">
+          <button
+            className="refresh-btn ai-btn"
+            onClick={() => void refreshGraph('architecture', { aiNative: true })}
+            title="Regenerate architecture using AI reasoning"
+          >
             <RefreshCw size={14} className={loading ? 'spinning' : ''} />
             Refresh Architecture
           </button>
@@ -272,15 +303,19 @@ export default function App() {
         </div>
 
         <div className="filter-hint">
-          Scope first, then role. Module lanes split modules side-by-side with cross-module connectors. Compact graph keeps one dense global layout.
+          Scope first, then role. Module lanes split modules side-by-side with cross-module
+          connectors. Compact graph keeps one dense global layout.
         </div>
 
         <div className="role-strip">
-          <button className={effectiveActiveRole === 'all' ? 'role-chip active' : 'role-chip'} onClick={() => setActiveRole('all')}>
+          <button
+            className={effectiveActiveRole === 'all' ? 'role-chip active' : 'role-chip'}
+            onClick={() => setActiveRole('all')}
+          >
             <Workflow size={13} />
             All
           </button>
-          {architectureGroups.map(group => (
+          {architectureGroups.map((group) => (
             <button
               key={group.id}
               className={effectiveActiveRole === group.id ? 'role-chip active' : 'role-chip'}
@@ -320,7 +355,10 @@ export default function App() {
         {error && <div className="error-box">{error}</div>}
 
         <div className="sidebar-footer">
-          <span>Updated {graph.generatedAt ? new Date(graph.generatedAt).toLocaleTimeString() : 'just now'}</span>
+          <span>
+            Updated{' '}
+            {graph.generatedAt ? new Date(graph.generatedAt).toLocaleTimeString() : 'just now'}
+          </span>
           <span>{isArchitectureGraph ? 'Mode: architecture' : 'Mode: file dependency'}</span>
           <span>{deferredQuery ? `Filtering: ${deferredQuery}` : 'All files visible'}</span>
         </div>
@@ -342,7 +380,7 @@ export default function App() {
         {loading && (
           <div className="loading-overlay">
             <div className="loading-spinner">
-               <Sparkles size={24} className="loading-sparkle" />
+              <Sparkles size={24} className="loading-sparkle" />
             </div>
             <span>Architecting your map...</span>
             <span className="loading-subtip">AI is reasoning about your codebase structure</span>

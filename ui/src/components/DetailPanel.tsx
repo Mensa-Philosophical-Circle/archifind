@@ -38,7 +38,9 @@ export default function DetailPanel({ node, onClose }: Props) {
           <File size={14} />
           <span>Details</span>
         </div>
-        <button className="close-btn" onClick={onClose} aria-label="Close details"><X size={14} /></button>
+        <button className="close-btn" onClick={onClose} aria-label="Close details">
+          <X size={14} />
+        </button>
       </div>
 
       {/* Module classification (AI-generated) */}
@@ -94,8 +96,10 @@ export default function DetailPanel({ node, onClose }: Props) {
             <span>Exports</span>
           </div>
           <div className="detail-symbol-list">
-            {node.data.symbols.slice(0, 8).map(symbol => (
-              <span key={symbol} className="detail-symbol-pill">{symbol}</span>
+            {node.data.symbols.slice(0, 8).map((symbol) => (
+              <span key={symbol} className="detail-symbol-pill">
+                {symbol}
+              </span>
             ))}
           </div>
         </div>
@@ -108,8 +112,10 @@ export default function DetailPanel({ node, onClose }: Props) {
             <span>Included Files</span>
           </div>
           <div className="detail-symbol-list">
-            {node.data.files.slice(0, 8).map(file => (
-              <span key={file} className="detail-symbol-pill">{file.split('/').pop()}</span>
+            {node.data.files.slice(0, 8).map((file) => (
+              <span key={file} className="detail-symbol-pill">
+                {file.split('/').pop()}
+              </span>
             ))}
           </div>
         </div>

@@ -1,14 +1,24 @@
 {
   "name": "archifind",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A CLI for scanning codebases and visualizing their architecture as an interactive graph.",
   "main": "src/cli.js",
   "bin": {
-    "archifind": "./src/cli.js"
+    "archifind": "src/cli.js"
   },
   "type": "module",
   "engines": {
     "node": ">=18"
+  },
+  "files": [
+    "src/",
+    "ui/dist/",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mensa-Philosophical-Circle/archifind.git"
   },
   "scripts": {
     "start": "node src/cli.js",
@@ -17,7 +27,16 @@
     "link": "npm link",
     "ui:build": "npm --prefix ui run build",
     "ui:dev": "npm --prefix ui run dev",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint . && npm --prefix ui run lint",
+    "lint:fix": "eslint . --fix && npm --prefix ui run lint -- --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "type-check": "npm --prefix ui run type-check",
+    "quality": "npm run lint && npm run format:check && npm run type-check",
+    "quality:fix": "npm run lint:fix && npm run format",
+    "prepare": "husky",
+    "prepublishOnly": "npm run quality && npm run ui:build"
   },
   "keywords": [
     "cli",
@@ -36,5 +55,27 @@
     "express": "^5.2.1",
     "fast-glob": "^3.3.3",
     "open": "^10.2.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.0.0"
+  },
+  "lint-staged": {
+    "src/**/*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "ui/src/**/*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml}": [
+      "prettier --write"
+    ]
   }
 }

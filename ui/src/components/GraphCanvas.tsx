@@ -24,16 +24,25 @@ const NODE_H = 92;
 function applyDagreLayout(nodes: Node[], edges: Edge[], rankdir: 'LR' | 'TB' = 'LR') {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir, nodesep: rankdir === 'TB' ? 28 : 42, ranksep: rankdir === 'TB' ? 80 : 120, marginx: 40, marginy: 40 });
+  g.setGraph({
+    rankdir,
+    nodesep: rankdir === 'TB' ? 28 : 42,
+    ranksep: rankdir === 'TB' ? 80 : 120,
+    marginx: 40,
+    marginy: 40,
+  });
 
-  nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
-  edges.forEach(e => g.setEdge(e.source, e.target));
+  nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
+  edges.forEach((e) => g.setEdge(e.source, e.target));
 
   dagre.layout(g);
 
-  return nodes.map(n => {
+  return nodes.map((n) => {
     const pos = g.node(n.id) as { x: number; y: number };
-    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } } as Node<FlowNodeData>;
+    return {
+      ...n,
+      position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 },
+    } as Node<FlowNodeData>;
   });
 }
 
@@ -43,7 +52,8 @@ function getModuleKey(node: Node<FlowNodeData>, graphMode?: string) {
     return parts[1] || 'root';
   }
 
-  const directory = node.data.directory && node.data.directory !== '.' ? node.data.directory : 'root';
+  const directory =
+    node.data.directory && node.data.directory !== '.' ? node.data.directory : 'root';
   const [rootSegment] = directory.split('/');
   return rootSegment || 'root';
 }
@@ -73,22 +83,24 @@ function applyModuleLaneLayout(nodes: Node<FlowNodeData>[], edges: Edge[], graph
 
   const placements = orderedModules.map((moduleKey) => {
     const laneNodes = moduleBuckets.get(moduleKey) ?? [];
-    const laneNodeIds = new Set(laneNodes.map(node => node.id));
-    const laneEdges = edges.filter(edge => laneNodeIds.has(edge.source) && laneNodeIds.has(edge.target));
+    const laneNodeIds = new Set(laneNodes.map((node) => node.id));
+    const laneEdges = edges.filter(
+      (edge) => laneNodeIds.has(edge.source) && laneNodeIds.has(edge.target)
+    );
     const laneLayout = applyDagreLayout(laneNodes, laneEdges, 'TB');
 
-    const minX = Math.min(...laneLayout.map(node => node.position.x));
-    const maxX = Math.max(...laneLayout.map(node => node.position.x + NODE_W));
-    const minY = Math.min(...laneLayout.map(node => node.position.y));
-    const maxY = Math.max(...laneLayout.map(node => node.position.y + NODE_H));
+    const minX = Math.min(...laneLayout.map((node) => node.position.x));
+    const maxX = Math.max(...laneLayout.map((node) => node.position.x + NODE_W));
+    const minY = Math.min(...laneLayout.map((node) => node.position.y));
+    const maxY = Math.max(...laneLayout.map((node) => node.position.y + NODE_H));
 
     return {
       moduleKey,
       laneLayout,
       minX,
       minY,
-      width: (maxX - minX) + 140,
-      height: (maxY - minY) + 140,
+      width: maxX - minX + 140,
+      height: maxY - minY + 140,
     };
   });
 
@@ -99,12 +111,12 @@ function applyModuleLaneLayout(nodes: Node<FlowNodeData>[], edges: Edge[], graph
 
   const columnWidths = Array.from({ length: columns }, (_, columnIndex) => {
     const inColumn = placements.filter((_, index) => index % columns === columnIndex);
-    return inColumn.length > 0 ? Math.max(...inColumn.map(item => item.width)) : 0;
+    return inColumn.length > 0 ? Math.max(...inColumn.map((item) => item.width)) : 0;
   });
 
   const rowHeights = Array.from({ length: rows }, (_, rowIndex) => {
     const inRow = placements.slice(rowIndex * columns, (rowIndex + 1) * columns);
-    return inRow.length > 0 ? Math.max(...inRow.map(item => item.height)) : 0;
+    return inRow.length > 0 ? Math.max(...inRow.map((item) => item.height)) : 0;
   });
 
   const columnOffsets = columnWidths.reduce<number[]>((offsets, _width, index) => {
@@ -151,10 +163,19 @@ interface Props {
   theme: 'dark' | 'light';
 }
 
-export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query, minimumConnections, activeRole, layoutMode, theme }: Props) {
+export default function GraphCanvas({
+  data,
+  onNodeSelect,
+  selectedNodeId,
+  query,
+  minimumConnections,
+  activeRole,
+  layoutMode,
+  theme,
+}: Props) {
   const baseNodes: Node<FlowNodeData>[] = useMemo(() => {
     const ts = performance.now();
-    const mapped = data.nodes.map<Node<FlowNodeData>>(n => ({
+    const mapped = data.nodes.map<Node<FlowNodeData>>((n) => ({
       id: n.id,
       type: 'fileNode',
       data: { ...n.data },
@@ -184,19 +205,26 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
     return baseNodes.filter((node) => {
       const degree = degreeMap.get(node.id) ?? 0;
       const matchesRole = activeRole === 'all' || node.data.role === activeRole;
-      const matchesQuery = !normalizedQuery || node.id.toLowerCase().includes(normalizedQuery) || node.data.label.toLowerCase().includes(normalizedQuery) || node.data.ext.toLowerCase().includes(normalizedQuery);
+      const matchesQuery =
+        !normalizedQuery ||
+        node.id.toLowerCase().includes(normalizedQuery) ||
+        node.data.label.toLowerCase().includes(normalizedQuery) ||
+        node.data.ext.toLowerCase().includes(normalizedQuery);
       const matchesConnectivity = degree >= minimumConnections;
 
       return matchesRole && matchesQuery && matchesConnectivity;
     });
   }, [activeRole, baseNodes, degreeMap, minimumConnections, query]);
 
-  const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(node => node.id)), [filteredNodes]);
+  const filteredNodeIds = useMemo(
+    () => new Set(filteredNodes.map((node) => node.id)),
+    [filteredNodes]
+  );
 
   const filteredEdges: Edge[] = useMemo(
     () =>
       data.edges
-        .filter(edge => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target))
+        .filter((edge) => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target))
         .map((edge) => ({
           id: edge.id,
           source: edge.source,
@@ -245,12 +273,12 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
           label: hideEdgeLabel ? undefined : edge.label,
           markerEnd: {
             type: MarkerType.ArrowClosed,
-            color: crossModule ? '#29c7ff' : (theme === 'dark' ? '#5f6d7c' : '#8d96a2'),
+            color: crossModule ? '#29c7ff' : theme === 'dark' ? '#5f6d7c' : '#8d96a2',
             width: crossModule ? 12 : 10,
             height: crossModule ? 12 : 10,
           },
           style: {
-            stroke: crossModule ? '#29c7ff' : (theme === 'dark' ? '#4d5968' : '#9aa3ad'),
+            stroke: crossModule ? '#29c7ff' : theme === 'dark' ? '#4d5968' : '#9aa3ad',
             strokeWidth: crossModule ? 1.35 : 0.85,
             opacity: crossModule ? 0.56 : 0.17,
           },
@@ -292,7 +320,9 @@ export default function GraphCanvas({ data, onNodeSelect, selectedNodeId, query,
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     console.log(`[DRAG] Node changes: ${changes.length} change(s)`);
-    setInteractiveNodes((currentNodes) => applyNodeChanges(changes, currentNodes) as Node<FlowNodeData>[]);
+    setInteractiveNodes(
+      (currentNodes) => applyNodeChanges(changes, currentNodes) as Node<FlowNodeData>[]
+    );
   }, []);
 
   const onNodeClick = useCallback(

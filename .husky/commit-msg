@@ -1,0 +1,23 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "📋 Validating commit message format..."
+
+npx commitlint --edit "$1"
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Commit message format is invalid!"
+  echo ""
+  echo "📖 Commit message format:"
+  echo "   <type>(<scope>): <subject>"
+  echo ""
+  echo "   Valid types: feat, fix, docs, style, refactor, perf, test, chore, ci, security, revert"
+  echo ""
+  echo "   Example:"
+  echo "   feat(cli): add support for custom output formats"
+  echo ""
+  exit 1
+fi
+
+echo "✅ Commit message format is valid!"

@@ -43,7 +43,8 @@ function FileNode({ data, selected }: { data: any; selected?: boolean }) {
   const name = parts[parts.length - 1] || data.label;
   const dir = parts.slice(0, -1).join('/');
   const isArchitectureNode = data.language === 'architecture';
-  const moduleLabel = data.moduleLabel || (data.directory && data.directory !== '.' ? data.directory : 'Core');
+  const moduleLabel =
+    data.moduleLabel || (data.directory && data.directory !== '.' ? data.directory : 'Core');
   const componentLabel = data.componentLabel || name;
   const roleLabel = role === 'unknown' ? 'CORE' : String(role).toUpperCase();
   const secondaryLabel = isArchitectureNode ? componentLabel : name;
@@ -56,17 +57,33 @@ function FileNode({ data, selected }: { data: any; selected?: boolean }) {
         background: selected ? (theme === 'dark' ? '#000000' : '#ffffff') : bg,
         borderColor: selected ? (theme === 'dark' ? '#ffffff' : '#000000') : borderColor,
         color: textColor,
-        boxShadow: selected ? `0 0 0 1px ${theme === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)'}, 0 18px 40px rgba(0,0,0,0.18)` : '0 14px 32px rgba(0,0,0,0.12)',
+        boxShadow: selected
+          ? `0 0 0 1px ${theme === 'dark' ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.8)'}, 0 18px 40px rgba(0,0,0,0.18)`
+          : '0 14px 32px rgba(0,0,0,0.12)',
       }}
     >
       <Handle type="target" position={Position.Left} className="handle handle-left" />
-      <div className="node-icon" style={{ borderColor, color: textColor, background: theme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+      <div
+        className="node-icon"
+        style={{
+          borderColor,
+          color: textColor,
+          background: theme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+        }}
+      >
         <FileCode2 size={16} />
       </div>
       <div className="node-content">
-        <div className="node-name" title={isArchitectureNode ? `${moduleLabel} ${componentLabel}` : data.label}>{secondaryLabel}</div>
+        <div
+          className="node-name"
+          title={isArchitectureNode ? `${moduleLabel} ${componentLabel}` : data.label}
+        >
+          {secondaryLabel}
+        </div>
         <div className="node-meta-row">
-          <span className="node-ext" style={{ color: mutedColor }}>{roleLabel}</span>
+          <span className="node-ext" style={{ color: mutedColor }}>
+            {roleLabel}
+          </span>
           {typeof data.imports === 'number' && (
             <span className="node-connection-count">
               <Hash size={11} />
@@ -74,7 +91,12 @@ function FileNode({ data, selected }: { data: any; selected?: boolean }) {
             </span>
           )}
         </div>
-        {tertiaryLabel && <div className="node-dir" title={tertiaryLabel}><FolderGit2 size={11} />{tertiaryLabel}</div>}
+        {tertiaryLabel && (
+          <div className="node-dir" title={tertiaryLabel}>
+            <FolderGit2 size={11} />
+            {tertiaryLabel}
+          </div>
+        )}
       </div>
       <div className="node-pill" style={{ borderColor, color: textColor }}>
         <Landmark size={11} />

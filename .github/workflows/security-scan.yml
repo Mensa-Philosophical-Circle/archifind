@@ -1,0 +1,65 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [production, main, develop]
+  push:
+    branches: [production, main, develop]
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    name: Security Checks
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install UI dependencies
+        run: npm --prefix ui ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Check for vulnerable dependencies
+        run: |
+          echo "Checking for high/critical vulnerabilities..."
+          npm audit --json | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          vulnerabilities = data.get('vulnerabilities', {})
+          high_critical = sum(1 for v in vulnerabilities.values() if v.get('severity') in ['high', 'critical'])
+          print(f'Found {high_critical} high/critical vulnerabilities')
+          sys.exit(1 if high_critical > 0 else 0)
+          " || echo "⚠️  Please address vulnerabilities before merging"
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    name: Dependency Security
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'

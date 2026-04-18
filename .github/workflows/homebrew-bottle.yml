@@ -1,42 +1,42 @@
 name: Homebrew Bottle
 
 on:
-    push:
-        tags:
-            - v*
-    workflow_dispatch:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    bottle:
-        runs-on: macos-14
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  bottle:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Update Homebrew
-              run: brew update
+      - name: Update Homebrew
+        run: brew update
 
-            - name: Tap formula repository
-              run: brew tap Mensa-Philosophical-Circle/archifind https://github.com/${{
-                  github.repository }}.git
+      - name: Tap formula repository
+        run: brew tap Mensa-Philosophical-Circle/archifind https://github.com/${{
+          github.repository }}.git
 
-            - name: Install formula for bottle build
-              run: brew install --build-bottle mensa-philosophical-circle/archifind/archifind
+      - name: Install formula for bottle build
+        run: brew install --build-bottle mensa-philosophical-circle/archifind/archifind
 
-            - name: Test formula
-              run: brew test mensa-philosophical-circle/archifind/archifind
+      - name: Test formula
+        run: brew test mensa-philosophical-circle/archifind/archifind
 
-            - name: Build bottle artifacts
-              run: brew bottle --json --root-url="https://github.com/${{ github.repository
-                  }}/releases/download/${{ github.ref_name }}"
-                  mensa-philosophical-circle/archifind/archifind
+      - name: Build bottle artifacts
+        run: brew bottle --json --root-url="https://github.com/${{ github.repository
+          }}/releases/download/${{ github.ref_name }}"
+          mensa-philosophical-circle/archifind/archifind
 
-            - name: Upload bottle artifacts
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: |
-                      archifind--*.bottle*.tar.gz
-                      archifind--*.json
+      - name: Upload bottle artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            archifind--*.bottle*.tar.gz
+            archifind--*.json
