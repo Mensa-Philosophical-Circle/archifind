@@ -26,5 +26,9 @@ jobs:
             - name: Run brew style
               run: brew style Formula/archifind.rb
 
+            - name: Tap formula repository
+              run: brew tap Mensa-Philosophical-Circle/archifind https://github.com/${{
+                  github.repository }}.git
+
             - name: Run brew audit
-              run: brew audit --strict --online --formula ./Formula/archifind.rb
+              run: brew audit --strict --online mensa-philosophical-circle/archifind/archifind
