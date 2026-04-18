@@ -1,16 +1,31 @@
 {
   "name": "archifind",
   "version": "1.0.0",
-  "description": "",
+  "description": "A CLI for scanning codebases and visualizing their architecture as an interactive graph.",
   "main": "src/cli.js",
   "bin": {
     "archifind": "./src/cli.js"
   },
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "start": "node src/cli.js",
+    "setup": "node src/cli.js setup",
+    "brew:install": "bash scripts/install-homebrew.sh",
+    "link": "npm link",
+    "ui:build": "npm --prefix ui run build",
+    "ui:dev": "npm --prefix ui run dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "cli",
+    "architecture",
+    "codebase",
+    "visualization",
+    "analysis"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {

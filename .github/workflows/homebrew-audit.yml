@@ -1,0 +1,30 @@
+name: Homebrew Audit
+
+on:
+    pull_request:
+        paths:
+            - Formula/**
+            - .github/workflows/homebrew-audit.yml
+    push:
+        branches:
+            - production
+        paths:
+            - Formula/**
+            - .github/workflows/homebrew-audit.yml
+    workflow_dispatch:
+
+jobs:
+    audit:
+        runs-on: macos-14
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Update Homebrew
+              run: brew update
+
+            - name: Run brew style
+              run: brew style Formula/archifind.rb
+
+            - name: Run brew audit
+              run: brew audit --strict --online --formula ./Formula/archifind.rb

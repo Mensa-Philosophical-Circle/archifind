@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import { program } from 'commander';
 import fs from 'fs';
 import open from 'open';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { startServer } from './server.js';
@@ -24,6 +25,117 @@ function runCommand(command, args, cwd) {
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status}`);
   }
+}
+
+function detectShellName() {
+  const shellPath = (process.env.SHELL || process.env.ComSpec || '').toLowerCase();
+
+  if (shellPath.includes('zsh')) return 'zsh';
+  if (shellPath.includes('fish')) return 'fish';
+  if (shellPath.includes('bash')) return 'bash';
+  if (shellPath.includes('pwsh') || shellPath.includes('powershell') || process.platform === 'win32') return 'powershell';
+
+  return process.platform === 'darwin' ? 'zsh' : 'bash';
+}
+
+function getShellProfilePath(shellName) {
+  const homeDir = os.homedir();
+
+  switch (shellName) {
+    case 'zsh':
+      return path.join(homeDir, '.zshrc');
+    case 'bash':
+      return path.join(homeDir, '.bashrc');
+    case 'fish':
+      return path.join(homeDir, '.config', 'fish', 'config.fish');
+    case 'powershell':
+      return path.join(homeDir, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1');
+    default:
+      return path.join(homeDir, '.zshrc');
+  }
+}
+
+function buildShellSnippet(checkoutDir, shellName) {
+  const cliPath = path.join(checkoutDir, 'src', 'cli.js');
+  const escapedCheckoutDir = checkoutDir.replace(/\\/g, '\\\\');
+  const escapedCliPath = cliPath.replace(/\\/g, '\\\\');
+
+  if (shellName === 'powershell') {
+    return [
+      `$env:ARCHIFIND_HOME = "${escapedCheckoutDir}"`,
+      `function archifind { node "${escapedCliPath}" $args }`,
+    ].join('\n');
+  }
+
+  if (shellName === 'fish') {
+    return [
+      `set -gx ARCHIFIND_HOME \"${checkoutDir}\"`,
+      'function archifind',
+      '  node "$ARCHIFIND_HOME/src/cli.js" $argv',
+      'end',
+    ].join('\n');
+  }
+
+  return [
+    `export ARCHIFIND_HOME=\"${checkoutDir}\"`,
+    'archifind() {',
+    '  node "$ARCHIFIND_HOME/src/cli.js" "$@"',
+    '}',
+  ].join('\n');
+}
+
+function buildInstallInstructions() {
+  if (process.platform === 'darwin') {
+    return [
+      '1. Install Node.js with Homebrew:',
+      '   brew install node',
+      '2. From the archifind checkout, install dependencies and link the CLI:',
+      '   npm install',
+      '   npm link',
+    ];
+  }
+
+  if (process.platform === 'win32') {
+    return [
+      '1. Install Node.js with winget:',
+      '   winget install OpenJS.NodeJS.LTS',
+      '2. From the archifind checkout, install dependencies and link the CLI:',
+      '   npm install',
+      '   npm link',
+    ];
+  }
+
+  return [
+    '1. Install Node.js with your package manager.',
+    '2. From the archifind checkout, install dependencies and link the CLI:',
+    '   npm install',
+    '   npm link',
+  ];
+}
+
+function writeProfileSnippet(profilePath, snippet) {
+  const markerStart = '# archifind setup start';
+  const markerEnd = '# archifind setup end';
+  const block = [markerStart, snippet, markerEnd].join('\n');
+
+  fs.mkdirSync(path.dirname(profilePath), { recursive: true });
+
+  if (!fs.existsSync(profilePath)) {
+    fs.writeFileSync(profilePath, `${block}\n`, 'utf-8');
+    return { created: true, updated: false };
+  }
+
+  const current = fs.readFileSync(profilePath, 'utf-8');
+  const existingBlockPattern = new RegExp(`${markerStart}[\\s\\S]*?${markerEnd}`, 'm');
+
+  if (existingBlockPattern.test(current)) {
+    fs.writeFileSync(profilePath, current.replace(existingBlockPattern, block), 'utf-8');
+    return { created: false, updated: true };
+  }
+
+  const nextContent = current.endsWith('\n') ? `${current}${block}\n` : `${current}\n${block}\n`;
+  fs.writeFileSync(profilePath, nextContent, 'utf-8');
+  return { created: false, updated: true };
 }
 
 function ensureUiIsBuilt({ autoBuild, forceRebuild }) {
@@ -52,6 +164,41 @@ program
   .name('archifind')
   .description('A cross-platform CLI tool that scans your project and visualizes architecture visually')
   .version('1.0.0');
+
+program
+  .command('setup')
+  .description('Print or write OS-specific install and shell setup instructions')
+  .option('--home <path>', 'Path to the local archifind checkout', process.cwd())
+  .option('--shell <name>', 'Shell to configure: zsh, bash, fish, or powershell')
+  .option('--write', 'Write the shell snippet to the detected profile file')
+  .action(async (options) => {
+    try {
+      const checkoutDir = path.resolve(options.home);
+      const shellName = String(options.shell || detectShellName()).toLowerCase();
+      const profilePath = getShellProfilePath(shellName);
+      const installSteps = buildInstallInstructions();
+      const snippet = buildShellSnippet(checkoutDir, shellName);
+
+      console.log('[archifind] Install steps');
+      installSteps.forEach(step => console.log(step));
+      console.log('');
+      console.log('[archifind] Shell snippet');
+      console.log(snippet);
+
+      if (options.write) {
+        const result = writeProfileSnippet(profilePath, snippet);
+        console.log('');
+        console.log(`[archifind] Wrote setup snippet to ${profilePath}`);
+        if (result.created) {
+          console.log('[archifind] Created a new shell profile file.');
+        }
+        console.log('[archifind] Reload your shell after this change.');
+      }
+    } catch (error) {
+      console.error(error);
+      process.exitCode = 1;
+    }
+  });
 
 program
   .argument('[dir]', 'Directory to scan', '.')

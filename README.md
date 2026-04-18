@@ -1,86 +1,280 @@
 # archifind
-# Implementation Plan - `archifind` (Combined & Comprehensive)
 
-`archifind` is a cross-platform CLI tool designed to map and visualize the internal architecture of codebases. It goes beyond simple folder grouping to show exactly how components, files, and functions interact across multiple languages.
+`archifind` is a CLI that scans a codebase, infers how the project is structured, and serves that information as an interactive architecture map in the browser.
 
-## User Review Required
+It is built for people who want a fast way to understand a repo without reading every file first. The current version focuses on:
 
-> [!IMPORTANT]
-> **Consolidated Vision**: This plan combines the initial `archmap` technical depth with the finalized `archifind` decisions.
-> - **Multi-Language**: Analyzing JS/TS, Python, and Go in the first release.
-> - **Visual Depth**: Implementing an interactive canvas (React Flow) that shows system-wide interactions, not just file hierarchies.
-> - **Professional Schematic**: Following a clean, architectural blueprint style (inspired by Eraser.io). This means distinct borders, sharp typography, and high-contrast nodes instead of glassmorphism.
+- scanning local projects from the command line
+- building a graph of files and their imports/relationships
+- classifying files into architecture roles such as `api`, `service`, `frontend`, `shared`, `database`, `config`, `tests`, and `docs`
+- serving an interactive UI from a local Express server
+- refreshing the graph when files change
+- optionally using Hugging Face models for AI-assisted classification and chat
 
----
+## What It Does
 
-## Proposed Changes
+When you run `archifind` against a repository, it:
 
-### 1. Core Project Infrastructure
-Finalize the monorepo-style structure and CLI packaging.
+1. walks the target directory and finds source files
+2. parses supported import styles in JavaScript, TypeScript, Python, and Go
+3. resolves file-to-file relationships where possible
+4. groups files into higher-level architecture roles
+5. serves the resulting graph on a local web app
+6. keeps the graph up to date while the file watcher is running
 
-#### [MODIFY] [package.json](file:///home/Dev/Documents/Development/archifind/package.json)
-- Ensure all dependencies are consolidated: `commander`, `express`, `fast-glob`, `cors`, `open`.
-- Define `bin` link for the `archifind` command.
+The CLI also exposes AI-related options. If you provide a Hugging Face token, `archifind` can use hosted models for:
 
----
+- architecture role classification
+- component classification
+- natural-language questions about the graph in the UI
 
-### 2. Multi-Language Backend Analyzer
-The backend must handle diverse import/export patterns.
+## Install
 
-#### [MODIFY] [analyzer.js](file:///home/Dev/Documents/Development/archifind/src/analyzer.js)
-- **JS/TS Support**: Extracting ES6 `import`, CommonJS `require`, and `export` symbols.
-- **Python Support**: Extracting `import` and `from ... import` statements.
-- **Go Support**: Parsing package imports.
-- **Graph Generation**: Normalizing all file paths and creating a React Flow-compatible JSON:
-  ```json
-  {
-    "nodes": [{ "id": "path/to/file", "data": { "label": "file.js", "ext": "js" } }],
-    "edges": [{ "source": "A", "target": "B", "label": "imports" }]
-  }
-  ```
+There are two ways to use `archifind` today:
 
-#### [MODIFY] [server.js](file:///home/Dev/Documents/Development/archifind/src/server.js)
-- Serve the generated graph data via `GET /api/graph`.
-- Serve static UI assets from `ui/dist`.
-- Implement basic file system watcher (optional but nice) to refresh the graph on changes.
+1. run it from a local checkout while developing
+2. install it as a local command on your machine
 
----
+## macOS
 
-### 3. Architectural Blueprint UI (`ui/`)
-Build the visual experience using React Flow and Dagre with an Eraser.io aesthetic.
+If you already use Homebrew, install Node.js first:
 
-#### [NEW] [GraphCanvas.tsx](file:///home/Dev/Documents/Development/archifind/ui/src/components/GraphCanvas.tsx)
-- Implementation of the zoomable, draggable canvas.
-- **Auto-Layout Engine**: Integration with `dagre` to compute node positions automatically.
-- **Custom Nodes**: Professional schematic nodes with distinct borders, bold file icons, and high-readability labels. No blur or glass effects.
+```bash
+brew install node
+```
 
-#### [NEW] [App.tsx](file:///home/Dev/Documents/Development/archifind/ui/src/App.tsx)
-- Main layout with a **Detail Sidebar** that opens when a node is clicked.
-- **Search & Filter Bar**: Highlight specific file patterns or hide nodes with low connectivity.
-- **Minimap & Controls**: Standard high-quality navigation controls.
+Then install `archifind` from the checked-out project directory:
 
----
+```bash
+cd /path/to/archifind
+npm install
+npm link
+```
 
-## Open Questions
+That gives you a global `archifind` command on macOS without pulling the project from GitHub every time.
 
-> [!QUESTION]
-> 1. **Cross-Language Edges**: If a project has multiple languages (e.g., Python backend + TS frontend), should we attempt to link them via API endpoint strings, or keeps them as separate clusters in the first version?
-> 2. **Performance**: For massive codebases (>5000 files), should we implement "Lazy Loading" (only showing sub-graphs) or keep it as a single full map? I'll start with a full map until we hit performance caps.
+## Linux
 
----
+Install Node.js with your package manager, then link the CLI locally:
 
-## Verification Plan
+```bash
+cd /path/to/archifind
+npm install
+npm link
+```
 
-### Automated Tests
-- **Unit Test**: Run `analyzer.js` against a test repo containing JS, Python, and Go files. Verify that all imports are detected and mapped.
-- **Build Test**: Ensure `npm run build` in the UI directory generates a valid bundle for the Express server to serve.
+If you want a shell-level command instead of a global link, add a wrapper function in your shell profile.
 
-### Manual Verification
-- Run `node src/cli.js .` on the `archifind` repository itself.
-- Verify that the browser opens automatically to `localhost:4000`.
-- Interact with the graph: Drag nodes, click for details, and search for specific files.
-- Verify that the layout remains clean and readable even as the project grows.
+## Windows
 
-check eraser.io to get everything i am trying to achieve you wold also need ai for this something open source from hugging face also 
+Install Node.js with the official installer or `winget`, then run:
 
-you can check out hat they did here https://github.com/eraserlabs/eraser-io
+```powershell
+cd C:\path\to\archifind
+npm install
+npm link
+```
+
+You can also run it directly with `node src/cli.js .` if you do not want a linked command.
+
+## If You Want a Real Brew Formula
+
+`brew install archifind` now works through the public tap path.
+
+This repo now includes a Homebrew formula at [Formula/archifind.rb](Formula/archifind.rb). To use it, tap this repository and then install from brew:
+
+```bash
+brew tap Mensa-Philosophical-Circle/archifind https://github.com/Mensa-Philosophical-Circle/archifind.git
+brew install archifind
+```
+
+You can also install using the fully qualified formula name:
+
+```bash
+brew install mensa-philosophical-circle/archifind/archifind
+```
+
+If you want one command that does both steps, run the helper script:
+
+```bash
+bash scripts/install-homebrew.sh
+```
+
+Or through npm:
+
+```bash
+npm run brew:install
+```
+
+The helper script handles the common case where Homebrew reports a Node linking warning even though `archifind` finished installing.
+
+For maintainers:
+
+- Bottle workflow: [.github/workflows/homebrew-bottle.yml](.github/workflows/homebrew-bottle.yml)
+- Audit workflow: [.github/workflows/homebrew-audit.yml](.github/workflows/homebrew-audit.yml)
+- Core submission checklist: [docs/homebrew-core-checklist.md](docs/homebrew-core-checklist.md)
+
+You can still configure the local install path from the CLI itself:
+
+```bash
+archifind setup
+```
+
+To write the shell snippet into your profile automatically:
+
+```bash
+archifind setup --write
+```
+
+## Usage
+
+Scan the current directory:
+
+```bash
+archifind .
+```
+
+Scan another project:
+
+```bash
+archifind /path/to/your/project
+```
+
+Use a different port:
+
+```bash
+archifind . --port 5000
+```
+
+Do not open the browser automatically:
+
+```bash
+archifind . --no-open
+```
+
+Skip rebuilding the UI before startup:
+
+```bash
+archifind . --no-build-ui
+```
+
+Force a UI rebuild:
+
+```bash
+archifind . --rebuild-ui
+```
+
+## AI Configuration
+
+`archifind` can use Hugging Face models if you want AI-assisted labels or chat.
+
+Set a token with any of these environment variables:
+
+```bash
+export HF_TOKEN="your-token-here"
+```
+
+Or pass it directly:
+
+```bash
+archifind . --hf-token "your-token-here"
+```
+
+Choose a different model if needed:
+
+```bash
+archifind . --hf-model "microsoft/Phi-3-mini-4k-instruct"
+```
+
+Disable AI features when you want a fully local run:
+
+```bash
+archifind . --no-ai-assist --no-ai-components --no-ai-native
+```
+
+## Make It a Shell Command
+
+If you used `npm link`, you usually do not need any extra setup.
+
+If you want a permanent command in `zsh`, add a small wrapper in your `~/.zshrc`:
+
+```bash
+export ARCHIFIND_HOME="$HOME/dev/archifind"
+alias archifind="node $ARCHIFIND_HOME/src/cli.js"
+```
+
+Then reload your shell:
+
+```bash
+source ~/.zshrc
+```
+
+If you prefer a function that forwards all arguments cleanly:
+
+```bash
+archifind() {
+  node "$HOME/dev/archifind/src/cli.js" "$@"
+}
+```
+
+You can also make the CLI executable and call it directly from the checkout:
+
+```bash
+chmod +x src/cli.js
+./src/cli.js .
+```
+
+If you want to make it available in every terminal on macOS or Linux without typing the full path, `npm link` is the quickest path.
+
+## UI
+
+`archifind` starts a local web server and serves the UI from the bundled `ui/dist` build.
+
+The interface is meant to help you:
+
+- pan around the code graph
+- inspect a file or module in a detail panel
+- understand which parts of the repo are connected
+- spot isolated areas, shared modules, and likely boundaries
+
+## Supported Languages
+
+The analyzer currently understands:
+
+- JavaScript and TypeScript, including ES modules, CommonJS `require`, and re-exports
+- Python `import` and `from ... import` statements
+- Go import blocks and single-line imports
+
+## Development
+
+From the repository root:
+
+```bash
+npm install
+cd ui && npm install
+```
+
+Build the UI:
+
+```bash
+cd ui
+npm run build
+```
+
+Start the CLI:
+
+```bash
+node src/cli.js .
+```
+
+## Notes
+
+- The UI is served locally; nothing is uploaded unless you enable Hugging Face features.
+- If the browser does not open automatically, use the printed localhost URL.
+- For large repos, the first scan can take a moment while the graph is built.
+
+## Roadmap
+
+The project is still evolving toward a more schematic, Eraser-style architecture view with stronger AI-assisted organization and richer visual grouping.
+
+If you want, I can also add a shorter README badge section, an install-from-`npx` path, or a proper `package.json` `scripts` section to match the new docs.
