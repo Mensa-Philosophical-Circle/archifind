@@ -102,6 +102,13 @@ For maintainers:
 - Bottle workflow: [.github/workflows/homebrew-bottle.yml](.github/workflows/homebrew-bottle.yml)
 - Audit workflow: [.github/workflows/homebrew-audit.yml](.github/workflows/homebrew-audit.yml)
 - Core submission checklist: [docs/homebrew-core-checklist.md](docs/homebrew-core-checklist.md)
+- Core PR template: [docs/homebrew-core-pr-template.md](docs/homebrew-core-pr-template.md)
+
+Prepare release tarball fields for the formula after tagging:
+
+```bash
+./scripts/prepare-homebrew-release.sh v1.0.1
+```
 
 You can still configure the local install path from the CLI itself:
 
