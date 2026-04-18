@@ -4,26 +4,15 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getChatModelName,
+  getClassifierModelName,
+  requestHuggingFaceChat,
+  requestProxyChat,
+} from './ai-client.js';
 import { analyzeProject } from './analyzer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function getHuggingFaceToken() {
-  return (
-    process.env.HF_TOKEN ||
-    process.env.HUGGING_FACE_HUB_TOKEN ||
-    process.env.HUGGINGFACEHUB_API_TOKEN ||
-    null
-  );
-}
-
-function getClassifierModelName() {
-  return process.env.HF_MODEL || 'MoritzLaurer/deberta-v3-large-zeroshot-v2.0';
-}
-
-function getChatModelName() {
-  return process.env.HF_CHAT_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
-}
 
 function buildGraphSummary(graph, selectedNodeId) {
   const selectedNode = selectedNodeId
@@ -74,49 +63,11 @@ function buildFallbackAnswer(question, graph, selectedNodeId) {
 }
 
 async function askHuggingFace(prompt) {
-  const token = getHuggingFaceToken();
-  if (!token || typeof fetch !== 'function') {
-    return null;
-  }
-
   const modelName = getChatModelName();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const proxied = await requestProxyChat(prompt, modelName);
+  if (proxied) return proxied;
 
-  try {
-    const response = await fetch('https://router.huggingface.co/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 500,
-        temperature: 0.2,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.warn(
-        `[archifind] AI chat request failed (${response.status}):`,
-        errText.slice(0, 200)
-      );
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || null;
-    return content ? String(content).trim() : null;
-  } catch (error) {
-    console.warn('[archifind] AI chat request failed:', error?.message ?? error);
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return requestHuggingFaceChat(prompt, modelName);
 }
 
 export async function startServer(targetDir, port) {

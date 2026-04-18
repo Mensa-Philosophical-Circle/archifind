@@ -14,7 +14,8 @@
     "src/",
     "ui/dist/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    ".env.example"
   ],
   "repository": {
     "type": "git",
@@ -22,6 +23,7 @@
   },
   "scripts": {
     "start": "node src/cli.js",
+    "start:ai-proxy": "node src/ai-proxy-server.js",
     "setup": "node src/cli.js setup",
     "brew:install": "bash scripts/install-homebrew.sh",
     "link": "npm link",

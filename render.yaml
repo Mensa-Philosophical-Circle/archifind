@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: archifind-ai-proxy
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run start:ai-proxy
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: HF_TOKEN
+        sync: false
+      - key: ARCHIFIND_PROXY_ALLOWED_TOKENS
+        sync: false
+      - key: ARCHIFIND_PROXY_ADMIN_TOKEN
+        sync: false
+      - key: ARCHIFIND_PROXY_RATE_WINDOW_MS
+        value: '60000'
+      - key: ARCHIFIND_PROXY_MAX_REQUESTS_PER_WINDOW
+        value: '30'
+      - key: ARCHIFIND_PROXY_MAX_DAILY_REQUESTS_PER_TOKEN
+        value: '2000'
+      - key: ARCHIFIND_AI_PROXY_TIMEOUT_MS
+        value: '30000'

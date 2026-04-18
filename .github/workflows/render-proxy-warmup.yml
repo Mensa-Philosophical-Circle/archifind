@@ -1,0 +1,22 @@
+name: Render Proxy Warmup
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render proxy health endpoint
+        env:
+          PROXY_URL: ${{ secrets.RENDER_PROXY_URL }}
+        run: |
+          if [ -z "$PROXY_URL" ]; then
+            echo "RENDER_PROXY_URL secret is not set; skipping."
+            exit 0
+          fi
+
+          curl -fsS "$PROXY_URL/health" >/dev/null
+          echo "Proxy health check succeeded."

@@ -1,6 +1,15 @@
 import fg from 'fast-glob';
 import fs from 'fs';
 import path from 'path';
+import {
+  getChatModelName,
+  getClassifierModelName,
+  getHuggingFaceToken,
+  requestHuggingFaceChat,
+  requestHuggingFaceZeroShot,
+  requestProxyChat,
+  requestProxyZeroShot,
+} from './ai-client.js';
 
 const JS_EXTENSIONS = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
 const PY_EXTENSIONS = ['.py'];
@@ -60,7 +69,6 @@ const HF_COMPONENT_LABELS = [
   'dto contract',
   'cross-cutting',
   'persistence',
-  'configuration',
   'ui components',
   'ui pages',
   'ui state',
@@ -82,65 +90,28 @@ const ROLE_COMPONENT_CANDIDATES = {
 
 const HIDDEN_ROLES = new Set(['config', 'infra', 'tests', 'docs', 'script']);
 
-function getHuggingFaceToken() {
-  return (
-    process.env.HF_TOKEN ||
-    process.env.HUGGING_FACE_HUB_TOKEN ||
-    process.env.HUGGINGFACEHUB_API_TOKEN ||
-    null
-  );
-}
-
 async function runHuggingFaceChat(prompt, model = null) {
   const token = getHuggingFaceToken();
-  if (!token) return null;
+  if (!token && !process.env.ARCHIFIND_AI_PROXY_URL) return null;
 
-  const modelName = model || process.env.HF_CHAT_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
+  const modelName = model || getChatModelName();
+  console.info(`[AI-CHAT] Sending chat request to ${modelName}...`);
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // Increased to 60s
-
-    console.info(`[AI-CHAT] Sending chat request to ${modelName} (OpenAI-compatible)...`);
-
-    const response = await fetch('https://router.huggingface.co/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      console.info(
-        `[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`
-      );
-      const errText = await response.text();
-      console.info(`[AI-CHAT] Error body: ${errText.slice(0, 200)}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || null;
-    if (content) {
-      console.info(
-        `[AI-SUCCESS] RECEIVED ARCHITECTURAL REASONING FROM ${modelName} (${content.length} chars)`
-      );
-    }
-    return content;
-  } catch (error) {
-    console.error(`[AI-CHAT] Fetch error: ${error.message}`);
-    return null;
+  const proxied = await requestProxyChat(prompt, modelName);
+  if (proxied) {
+    console.info(
+      `[AI-SUCCESS] RECEIVED ARCHITECTURAL REASONING FROM PROXY ${modelName} (${proxied.length} chars)`
+    );
+    return proxied;
   }
+
+  const direct = await requestHuggingFaceChat(prompt, modelName);
+  if (direct) {
+    console.info(
+      `[AI-SUCCESS] RECEIVED ARCHITECTURAL REASONING FROM ${modelName} (${direct.length} chars)`
+    );
+  }
+  return direct;
 }
 
 function clampText(value, maxLength) {
@@ -483,67 +454,33 @@ function buildComponentPrompt(filePath, role, content, dependencyCount, exportCo
 
 async function runHuggingFaceZeroShot(prompt, candidateLabels) {
   const token = getHuggingFaceToken();
-  if (!token || typeof fetch !== 'function') {
+  if ((!token && !process.env.ARCHIFIND_AI_PROXY_URL) || typeof fetch !== 'function') {
     console.info('[AI] HF token not available or fetch unavailable');
     return null;
   }
 
-  const candidateModels = [process.env.HF_MODEL, 'facebook/bart-large-mnli'].filter(Boolean);
+  const candidateModels = [getClassifierModelName(), 'facebook/bart-large-mnli'].filter(Boolean);
 
   for (const modelName of candidateModels) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000); // Increased to 30s
-
     try {
       console.info(
         `[AI-CHAT] Sending classification request to ${modelName} (${prompt.length} chars)...`
       );
-      const response = await fetch(
-        `https://router.huggingface.co/hf-inference/models/${encodeURIComponent(modelName)}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            inputs: prompt,
-            parameters: {
-              candidate_labels: candidateLabels,
-            },
-          }),
-          signal: controller.signal,
-        }
-      );
-
-      if (!response.ok) {
-        console.info(
-          `[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`
-        );
-        continue;
+      const proxied = await requestProxyZeroShot(prompt, candidateLabels, modelName);
+      if (proxied) {
+        console.info(`[AI] HF classified via proxy as: ${proxied}`);
+        return proxied;
       }
 
-      const result = await response.json();
-      let rankedLabels = [];
-
-      if (Array.isArray(result)) {
-        // The router often returns a list of { label, score } objects directly
-        rankedLabels = result.map((item) => item.label).filter(Boolean);
-      } else if (Array.isArray(result?.labels)) {
-        // Some endpoints return { labels: [...], scores: [...] }
-        rankedLabels = result.labels;
+      const direct = await requestHuggingFaceZeroShot(prompt, candidateLabels, modelName);
+      if (direct) {
+        console.info(`[AI] HF classified as: ${direct}`);
+        return direct;
       }
 
-      if (rankedLabels.length > 0) {
-        const bestLabel = String(rankedLabels[0]).toLowerCase();
-        const score = Array.isArray(result) ? result[0]?.score : result?.scores?.[0];
-        console.info(`[AI] HF classified as: ${bestLabel} (score: ${score?.toFixed(3) ?? 'N/A'})`);
-        return bestLabel;
-      }
+      console.info(`[AI-CHAT] Classification failed for ${modelName}`);
     } catch (err) {
       console.info(`[AI] HF API error for ${modelName}:`, err instanceof Error ? err.message : err);
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
