@@ -450,15 +450,24 @@ async function runHuggingFaceZeroShot(prompt, candidateLabels) {
 
       if (!response.ok) {
         console.log(`[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`);
-        // Skip further logging to avoid spam
         continue;
       }
 
       const result = await response.json();
-      const rankedLabels = Array.isArray(result?.labels) ? result.labels : [];
+      let rankedLabels = [];
+      
+      if (Array.isArray(result)) {
+        // The router often returns a list of { label, score } objects directly
+        rankedLabels = result.map(item => item.label).filter(Boolean);
+      } else if (Array.isArray(result?.labels)) {
+        // Some endpoints return { labels: [...], scores: [...] }
+        rankedLabels = result.labels;
+      }
+
       if (rankedLabels.length > 0) {
         const bestLabel = String(rankedLabels[0]).toLowerCase();
-        console.log(`[AI] HF classified as: ${bestLabel} (score: ${result?.scores?.[0]?.toFixed(3)})`);
+        const score = Array.isArray(result) ? result[0]?.score : result?.scores?.[0];
+        console.log(`[AI] HF classified as: ${bestLabel} (score: ${score?.toFixed(3) ?? 'N/A'})`);
         return bestLabel;
       }
     } catch (err) {
@@ -952,9 +961,19 @@ export async function analyzeProject(rootPath, options = {}) {
   const MAX_FILE_SIZE = 500 * 1024;
   const MAX_NODES = 1000;
 
-  const files = await fg(['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'], {
+  const includeEnv = Boolean(options.includeEnv ?? process.env.ARCHIFIND_INCLUDE_ENV === 'true');
+  const searchPatterns = ['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'];
+  const ignorePatterns = ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.*/**'];
+
+  if (includeEnv) {
+    searchPatterns.push('**/.env*');
+  } else {
+    ignorePatterns.push('**/.env*');
+  }
+
+  const files = await fg(searchPatterns, {
     cwd: absoluteRoot,
-    ignore: ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.*/**'],
+    ignore: ignorePatterns,
     absolute: true,
   });
 
