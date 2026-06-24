@@ -1,9 +1,9 @@
 class Archifind < Formula
   desc "Scan codebases and visualize architecture as an interactive graph"
   homepage "https://github.com/Mensa-Philosophical-Circle/archifind"
-  url "https://github.com/Mensa-Philosophical-Circle/archifind/archive/refs/tags/autopush-4-2aad74e.tar.gz"
+  url "https://github.com/Mensa-Philosophical-Circle/archifind/archive/refs/tags/autopush-5-cde28bd.tar.gz"
   version "1.0.1"
-  sha256 "195682e5d3fc0e77d7606bcccb738fde29963045c580f6fe803a3e62b64404f7"
+  sha256 "e302946aea2f4c783b5f769397d993c0f827a0361bef71395399a7e0cfdabd70"
   license "ISC"
 
   depends_on "node"
