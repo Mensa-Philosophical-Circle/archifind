@@ -1,58 +1,30 @@
-import {
-  ArrowUpRight,
-  Code2,
-  Filter,
-  Layers3,
-  LayoutGrid,
-  MoonStar,
-  RefreshCw,
-  Search,
-  Sparkles,
-  SunMedium,
-  Workflow,
-} from 'lucide-react';
+import { ArrowUpRight, Code2, Filter, Layers3, LayoutGrid, MoonStar, RefreshCw, Search, SunMedium, Workflow } from 'lucide-react';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import ArchitectureChat from './components/ArchitectureChat';
 import DetailPanel from './components/DetailPanel';
 import GraphCanvas from './components/GraphCanvas';
 import type { GraphData, NodeData } from './types';
 
 const DEFAULT_GRAPH: GraphData = { nodes: [], edges: [], generatedAt: null };
-const THEME_STORAGE_KEY = 'archifind-theme';
-const GRAPH_MODE_STORAGE_KEY = 'archifind-graph-mode';
+const THEME_STORAGE_KEY = 'archfind-theme';
+const GRAPH_MODE_STORAGE_KEY = 'archfind-graph-mode';
 
-const DEFAULT_ROLE_ORDER = [
-  'database',
-  'orm',
-  'api',
-  'service',
-  'frontend',
-  'shared',
-  'config',
-  'infra',
-  'tests',
-  'docs',
-  'script',
-  'unknown',
-];
-const ROLE_LABELS: Record<string, string> = {
-  database: 'Database',
-  orm: 'ORM',
-  api: 'API',
-  service: 'Service',
-  frontend: 'Frontend',
-  shared: 'Shared',
-  config: 'Config',
-  infra: 'Infra',
-  tests: 'Tests',
-  docs: 'Docs',
-  script: 'Scripts',
-  unknown: 'Core/Other',
-};
+const DEFAULT_ROLE_ORDER = ['database', 'orm', 'api', 'service', 'frontend', 'shared', 'config', 'infra', 'tests', 'docs', 'script', 'unknown'];
+const BACKEND_LAYERS = new Set(['interface', 'application', 'data']);
+
+function roleVisibleInStack(layer: string, role: string, stackMode: 'full' | 'frontend' | 'backend') {
+  if (stackMode === 'full') {
+    return true;
+  }
+
+  if (stackMode === 'frontend') {
+    return layer === 'presentation' || role === 'frontend';
+  }
+
+  return BACKEND_LAYERS.has(layer) || ['api', 'service', 'database', 'orm'].includes(role);
+}
 
 export default function App() {
   const [graph, setGraph] = useState<GraphData>(DEFAULT_GRAPH);
-  const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -67,6 +39,7 @@ export default function App() {
     return storedTheme === 'light' ? 'light' : 'dark';
   });
   const [activeRole, setActiveRole] = useState<string>('all');
+  const [stackMode, setStackMode] = useState<'full' | 'frontend' | 'backend'>('full');
   const [graphMode, setGraphMode] = useState<'architecture' | 'file'>(() => {
     if (typeof window === 'undefined') {
       return 'architecture';
@@ -75,48 +48,27 @@ export default function App() {
     const storedMode = window.localStorage.getItem(GRAPH_MODE_STORAGE_KEY);
     return storedMode === 'file' ? 'file' : 'architecture';
   });
-  const [layoutMode, setLayoutMode] = useState<'modules' | 'global'>('modules');
   const deferredQuery = useDeferredValue(query);
-  const isArchitectureGraph =
-    graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
+  const isArchitectureGraph = graph.graphMode === 'architecture' || graph.graphMode === 'nest-architecture';
 
-  const refreshGraph = useCallback(
-    async (mode: 'architecture' | 'file', options: { aiNative?: boolean } = {}) => {
-      console.log(`[SWITCH] Switching to mode: ${mode}${options.aiNative ? ' (AI Native)' : ''}`);
-      const cached = graphCache[mode];
-      if (cached && !options.aiNative) {
-        console.log(`[CACHE] Using cached graph for mode: ${mode}`);
-        setGraph(cached);
-        setLoading(false);
-        return;
+  const refreshGraph = useCallback(async (mode: 'architecture' | 'file') => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/graph?mode=${encodeURIComponent(mode)}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load graph (${response.status})`);
       }
 
-      setLoading(true);
-      setError(null);
-
-      try {
-        const ts = performance.now();
-        const url = options.aiNative
-          ? `/api/graph/refresh?mode=${encodeURIComponent(mode)}&aiNative=true`
-          : `/api/graph?mode=${encodeURIComponent(mode)}`;
-
-        const response = await fetch(url, { method: options.aiNative ? 'POST' : 'GET' });
-        if (!response.ok) {
-          throw new Error(`Failed to load graph (${response.status})`);
-        }
-
-        const data = await response.json();
-        console.log(`[PERF] Graph loaded in ${(performance.now() - ts).toFixed(1)}ms`);
-        setGraph(data);
-        setGraphCache((prev) => ({ ...prev, [mode]: data }));
-      } catch (fetchError) {
-        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load graph');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [graphCache]
-  );
+      const data = await response.json();
+      setGraph(data);
+    } catch (fetchError) {
+      setError(fetchError instanceof Error ? fetchError.message : 'Failed to load graph');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -141,7 +93,7 @@ export default function App() {
       return null;
     }
 
-    return graph.nodes.find((node) => node.id === selectedNodeId) ?? null;
+    return graph.nodes.find(node => node.id === selectedNodeId) ?? null;
   }, [graph.nodes, selectedNodeId]);
 
   const stats = useMemo(() => {
@@ -165,23 +117,29 @@ export default function App() {
       const role = node.data.role;
       const layer = node.data.layer;
 
+      if (!roleVisibleInStack(layer, role, stackMode)) {
+        return;
+      }
+
       counts.set(role, (counts.get(role) ?? 0) + 1);
       if (!layers.has(role)) {
         layers.set(role, layer);
       }
     });
 
-    const ordered = DEFAULT_ROLE_ORDER.filter((role) => counts.has(role)).map((role) => ({
-      id: role,
-      label: role,
-      count: counts.get(role) ?? 0,
-      layer: layers.get(role) ?? role,
-    }));
+    const ordered = DEFAULT_ROLE_ORDER
+      .filter(role => counts.has(role))
+      .map(role => ({
+        id: role,
+        label: role,
+        count: counts.get(role) ?? 0,
+        layer: layers.get(role) ?? role,
+      }));
 
     const extras = Array.from(counts.keys())
-      .filter((role) => !DEFAULT_ROLE_ORDER.includes(role))
+      .filter(role => !DEFAULT_ROLE_ORDER.includes(role))
       .sort()
-      .map((role) => ({
+      .map(role => ({
         id: role,
         label: role,
         count: counts.get(role) ?? 0,
@@ -189,14 +147,14 @@ export default function App() {
       }));
 
     return [...ordered, ...extras];
-  }, [graph.nodes]);
+  }, [graph.nodes, stackMode]);
 
   const effectiveActiveRole = useMemo(() => {
     if (activeRole === 'all') {
       return 'all';
     }
 
-    return architectureGroups.some((group) => group.id === activeRole) ? activeRole : 'all';
+    return architectureGroups.some(group => group.id === activeRole) ? activeRole : 'all';
   }, [activeRole, architectureGroups]);
 
   return (
@@ -208,14 +166,12 @@ export default function App() {
               <LayoutGrid size={18} />
             </div>
             <div>
-              <div className="brand-title">archifind</div>
+              <div className="brand-title">archfind</div>
               <div className="brand-subtitle">architecture map</div>
             </div>
             <button
               className="theme-toggle"
-              onClick={() =>
-                setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'))
-              }
+              onClick={() => setTheme(currentTheme => (currentTheme === 'dark' ? 'light' : 'dark'))}
               aria-label="Toggle theme"
               title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             >
@@ -235,7 +191,7 @@ export default function App() {
             <input
               className="search-input"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={event => setQuery(event.target.value)}
               placeholder="Search files, folders, or extensions"
             />
           </label>
@@ -250,17 +206,43 @@ export default function App() {
               min="0"
               max="8"
               value={minimumConnections}
-              onChange={(event) => setMinimumConnections(Number(event.target.value))}
+              onChange={event => setMinimumConnections(Number(event.target.value))}
             />
           </label>
 
+          <button className="refresh-btn" onClick={() => void refreshGraph(graphMode)}>
+            <RefreshCw size={14} />
+            Refresh graph
+          </button>
+        </div>
+
+        <div className="stack-switch" role="tablist" aria-label="Architecture view mode">
           <button
-            className="refresh-btn ai-btn"
-            onClick={() => void refreshGraph('architecture', { aiNative: true })}
-            title="Regenerate architecture using AI reasoning"
+            className={stackMode === 'full' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setStackMode('full');
+              setActiveRole('all');
+            }}
           >
-            <RefreshCw size={14} className={loading ? 'spinning' : ''} />
-            Refresh Architecture
+            Full stack
+          </button>
+          <button
+            className={stackMode === 'frontend' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setStackMode('frontend');
+              setActiveRole('all');
+            }}
+          >
+            Frontend
+          </button>
+          <button
+            className={stackMode === 'backend' ? 'stack-btn active' : 'stack-btn'}
+            onClick={() => {
+              setStackMode('backend');
+              setActiveRole('all');
+            }}
+          >
+            Backend
           </button>
         </div>
 
@@ -287,42 +269,23 @@ export default function App() {
           </button>
         </div>
 
-        <div className="layout-switch" role="tablist" aria-label="Layout mode">
-          <button
-            className={layoutMode === 'modules' ? 'stack-btn active' : 'stack-btn'}
-            onClick={() => setLayoutMode('modules')}
-          >
-            Module lanes
-          </button>
-          <button
-            className={layoutMode === 'global' ? 'stack-btn active' : 'stack-btn'}
-            onClick={() => setLayoutMode('global')}
-          >
-            Compact graph
-          </button>
-        </div>
-
         <div className="filter-hint">
-          Scope first, then role. Module lanes split modules side-by-side with cross-module
-          connectors. Compact graph keeps one dense global layout.
+          Scope first, then role. Diagram mode controls abstraction level: Architecture shows system blocks, File details shows direct file dependencies.
         </div>
 
         <div className="role-strip">
-          <button
-            className={effectiveActiveRole === 'all' ? 'role-chip active' : 'role-chip'}
-            onClick={() => setActiveRole('all')}
-          >
+          <button className={effectiveActiveRole === 'all' ? 'role-chip active' : 'role-chip'} onClick={() => setActiveRole('all')}>
             <Workflow size={13} />
             All
           </button>
-          {architectureGroups.map((group) => (
+          {architectureGroups.map(group => (
             <button
               key={group.id}
               className={effectiveActiveRole === group.id ? 'role-chip active' : 'role-chip'}
               onClick={() => setActiveRole(group.id)}
               title={group.layer}
             >
-              <span>{ROLE_LABELS[group.id] ?? group.label}</span>
+              <span>{group.label}</span>
               <span className="role-count">{group.count}</span>
             </button>
           ))}
@@ -355,10 +318,7 @@ export default function App() {
         {error && <div className="error-box">{error}</div>}
 
         <div className="sidebar-footer">
-          <span>
-            Updated{' '}
-            {graph.generatedAt ? new Date(graph.generatedAt).toLocaleTimeString() : 'just now'}
-          </span>
+          <span>Updated {graph.generatedAt ? new Date(graph.generatedAt).toLocaleTimeString() : 'just now'}</span>
           <span>{isArchitectureGraph ? 'Mode: architecture' : 'Mode: file dependency'}</span>
           <span>{deferredQuery ? `Filtering: ${deferredQuery}` : 'All files visible'}</span>
         </div>
@@ -373,19 +333,11 @@ export default function App() {
           query={deferredQuery}
           minimumConnections={minimumConnections}
           activeRole={effectiveActiveRole}
-          layoutMode={layoutMode}
+          stackMode={stackMode}
           theme={theme}
         />
 
-        {loading && (
-          <div className="loading-overlay">
-            <div className="loading-spinner">
-              <Sparkles size={24} className="loading-sparkle" />
-            </div>
-            <span>Architecting your map...</span>
-            <span className="loading-subtip">AI is reasoning about your codebase structure</span>
-          </div>
-        )}
+        {loading && <div className="loading-overlay">Analyzing project structure...</div>}
 
         {selectedNode && (
           <aside className="detail-shell">
@@ -393,8 +345,6 @@ export default function App() {
           </aside>
         )}
       </main>
-
-      <ArchitectureChat graphMode={graphMode} selectedNode={selectedNode} />
     </div>
   );
 }

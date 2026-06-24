@@ -10,12 +10,10 @@ const JS_IMPORT_RE = /^\s*import\s+[^'"\n]+from\s+['"]([^'"]+)['"]/gm;
 const JS_SIDE_EFFECT_IMPORT_RE = /^\s*import\s+['"]([^'"]+)['"]/gm;
 const JS_REQUIRE_RE = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
 const JS_EXPORT_FROM_RE = /^\s*export\s+(?:\*|\{[^\n]*\})\s+from\s+['"]([^'"]+)['"]/gm;
-const JS_EXPORT_SYMBOL_RE =
-  /^\s*export\s+(?:default\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
+const JS_EXPORT_SYMBOL_RE = /^\s*export\s+(?:default\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm;
 const JS_NAMED_EXPORT_RE = /^\s*export\s*\{([^\n]+)\}/gm;
 
-const PY_IMPORT_RE =
-  /^\s*import\s+([\w.]+(?:\s+as\s+[\w.]+)?(?:\s*,\s*[\w.]+(?:\s+as\s+[\w.]+)?)*)/gm;
+const PY_IMPORT_RE = /^\s*import\s+([\w.]+(?:\s+as\s+[\w.]+)?(?:\s*,\s*[\w.]+(?:\s+as\s+[\w.]+)?)*)/gm;
 const PY_FROM_IMPORT_RE = /^\s*from\s+([\w.]+)\s+import\s+([\w.*(),\s]+)/gm;
 const PY_DEF_RE = /^\s*(?:def|class)\s+([A-Za-z_][\w]*)/gm;
 
@@ -51,97 +49,7 @@ const HF_ZERO_SHOT_LABELS = [
   'script',
 ];
 
-const HF_COMPONENT_LABELS = [
-  'module',
-  'api controller',
-  'application service',
-  'repository',
-  'data model',
-  'dto contract',
-  'cross-cutting',
-  'persistence',
-  'configuration',
-  'ui components',
-  'ui pages',
-  'ui state',
-  'shared utilities',
-  'shared contracts',
-  'shared core',
-  'unclassified',
-];
-
-const ROLE_COMPONENT_CANDIDATES = {
-  api: ['api controller', 'api interface', 'api core', 'cross-cutting', 'dto contract'],
-  service: ['application service', 'shared utilities', 'shared core', 'cross-cutting'],
-  database: ['repository', 'data model', 'data access', 'persistence'],
-  orm: ['persistence', 'data model', 'data migrations', 'repository'],
-  frontend: ['ui components', 'ui pages', 'ui state', 'frontend core'],
-  shared: ['shared utilities', 'shared contracts', 'shared core', 'dto contract', 'cross-cutting'],
-  unknown: HF_COMPONENT_LABELS,
-};
-
 const HIDDEN_ROLES = new Set(['config', 'infra', 'tests', 'docs', 'script']);
-
-function getHuggingFaceToken() {
-  return (
-    process.env.HF_TOKEN ||
-    process.env.HUGGING_FACE_HUB_TOKEN ||
-    process.env.HUGGINGFACEHUB_API_TOKEN ||
-    null
-  );
-}
-
-async function runHuggingFaceChat(prompt, model = null) {
-  const token = getHuggingFaceToken();
-  if (!token) return null;
-
-  const modelName = model || process.env.HF_CHAT_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // Increased to 60s
-
-    console.info(`[AI-CHAT] Sending chat request to ${modelName} (OpenAI-compatible)...`);
-
-    const response = await fetch('https://router.huggingface.co/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      console.info(
-        `[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`
-      );
-      const errText = await response.text();
-      console.info(`[AI-CHAT] Error body: ${errText.slice(0, 200)}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || null;
-    if (content) {
-      console.info(
-        `[AI-SUCCESS] RECEIVED ARCHITECTURAL REASONING FROM ${modelName} (${content.length} chars)`
-      );
-    }
-    return content;
-  } catch (error) {
-    console.error(`[AI-CHAT] Fetch error: ${error.message}`);
-    return null;
-  }
-}
 
 function clampText(value, maxLength) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
@@ -183,13 +91,15 @@ function createCandidatePaths(rootPath, filePath, dependency, language) {
   } else if (language === 'python' && normalizedDependency.startsWith('..')) {
     addCandidatesFromBase(path.resolve(fileDir, normalizedDependency));
   } else {
-    const stripped = normalizedDependency.replace(/^@[^/]+\//, '').replace(/^\/+/, '');
+    const stripped = normalizedDependency
+      .replace(/^@[^/]+\//, '')
+      .replace(/^\/+/, '');
 
     addCandidatesFromBase(path.resolve(rootPath, stripped));
     addCandidatesFromBase(path.resolve(rootPath, stripped.replace(/\./g, '/')));
   }
 
-  return Array.from(candidates).map((candidate) => normalizeRelativePath(rootPath, candidate));
+  return Array.from(candidates).map(candidate => normalizeRelativePath(rootPath, candidate));
 }
 
 function resolveDependency(rootPath, filePath, dependency, language, lookup) {
@@ -213,18 +123,10 @@ function resolveDependency(rootPath, filePath, dependency, language, lookup) {
     return null;
   }
 
-  return (
-    Array.from(lookup.keys()).find((candidate) => {
-      const candidateStem = path.basename(candidate, path.extname(candidate));
-      return (
-        candidateStem === dependencyStem ||
-        candidate.endsWith(`/${dependencyStem}.py`) ||
-        candidate.endsWith(`/${dependencyStem}.go`) ||
-        candidate.endsWith(`/${dependencyStem}/index.js`) ||
-        candidate.endsWith(`/${dependencyStem}/index.ts`)
-      );
-    }) ?? null
-  );
+  return Array.from(lookup.keys()).find((candidate) => {
+    const candidateStem = path.basename(candidate, path.extname(candidate));
+    return candidateStem === dependencyStem || candidate.endsWith(`/${dependencyStem}.py`) || candidate.endsWith(`/${dependencyStem}.go`) || candidate.endsWith(`/${dependencyStem}/index.js`) || candidate.endsWith(`/${dependencyStem}/index.ts`);
+  }) ?? null;
 }
 
 function parseJavaScriptImports(content) {
@@ -249,7 +151,7 @@ function parseJavaScriptImports(content) {
   while ((match = JS_NAMED_EXPORT_RE.exec(content)) !== null) {
     match[1]
       .split(',')
-      .map((entry) => entry.trim())
+      .map(entry => entry.trim())
       .filter(Boolean)
       .forEach((entry) => {
         const exportedName = entry.split(/\s+as\s+/i).pop();
@@ -274,7 +176,7 @@ function parsePythonImports(content) {
   while ((match = PY_IMPORT_RE.exec(content)) !== null) {
     match[1]
       .split(',')
-      .map((entry) => entry.trim())
+      .map(entry => entry.trim())
       .filter(Boolean)
       .forEach((entry) => {
         const moduleName = entry.split(/\s+as\s+/i)[0].trim();
@@ -346,7 +248,7 @@ function inferArchitectureRoleHeuristically(filePath, content, extension) {
   const lowerPath = filePath.toLowerCase();
   const lowerContent = content.toLowerCase();
   const hasPathToken = (token) => new RegExp(`(^|[/_.-])${token}([/_.-]|$)`).test(lowerPath);
-  const hasAnyPathToken = (tokens) => tokens.some((token) => hasPathToken(token));
+  const hasAnyPathToken = (tokens) => tokens.some(token => hasPathToken(token));
 
   if (/(^|\/)cli\.(js|ts)$/.test(lowerPath) || /(tools|scripts|bin)\//.test(lowerPath)) {
     return 'script';
@@ -368,73 +270,27 @@ function inferArchitectureRoleHeuristically(filePath, content, extension) {
     return 'docs';
   }
 
-  if (
-    /(^|\/)(package\.json|tsconfig(?:\.[^/]+)?|vite\.config\.[^/]+|eslint\.config\.[^/]+|prettier\.config\.[^/]+|dockerfile|docker-compose(?:\.[^/]+)?|\.env(?:\.[^/]+)?|[^/]+\.(yaml|yml|toml|ini|cfg))$/.test(
-      lowerPath
-    ) ||
-    /(^|\/)(vite|tsconfig|eslint|prettier)\.config\./.test(lowerPath)
-  ) {
+  if (/(^|\/)(package\.json|tsconfig(?:\.[^/]+)?|vite\.config\.[^/]+|eslint\.config\.[^/]+|prettier\.config\.[^/]+|dockerfile|docker-compose(?:\.[^/]+)?|\.env(?:\.[^/]+)?|[^/]+\.(yaml|yml|toml|ini|cfg))$/.test(lowerPath) || /(^|\/)(vite|tsconfig|eslint|prettier)\.config\./.test(lowerPath)) {
     return 'config';
   }
 
-  if (
-    /(terraform|\.tf$|kubernetes|k8s|deployment|helm|\.github\/workflows|ci\/|devops|infra|infrastructure)/.test(
-      lowerPath
-    )
-  ) {
+  if (/(terraform|\.tf$|kubernetes|k8s|deployment|helm|\.github\/workflows|ci\/|devops|infra|infrastructure)/.test(lowerPath)) {
     return 'infra';
   }
 
-  if (
-    hasAnyPathToken([
-      'prisma',
-      'typeorm',
-      'sequelize',
-      'knex',
-      'drizzle',
-      'mongoose',
-      'sqlalchemy',
-      'gorm',
-      'alembic',
-      'entity',
-      'migration',
-      'schema',
-      'model',
-      'repository',
-      'seed',
-    ])
-  ) {
-    if (
-      hasAnyPathToken([
-        'prisma',
-        'typeorm',
-        'sequelize',
-        'knex',
-        'drizzle',
-        'mongoose',
-        'sqlalchemy',
-        'gorm',
-        'alembic',
-      ])
-    ) {
+  if (hasAnyPathToken(['prisma', 'typeorm', 'sequelize', 'knex', 'drizzle', 'mongoose', 'sqlalchemy', 'gorm', 'alembic', 'entity', 'migration', 'schema', 'model', 'repository', 'seed'])) {
+    if (hasAnyPathToken(['prisma', 'typeorm', 'sequelize', 'knex', 'drizzle', 'mongoose', 'sqlalchemy', 'gorm', 'alembic'])) {
       return 'orm';
     }
 
     return 'database';
   }
 
-  if (
-    /(prisma|typeorm|sequelize|knex|drizzle|mongoose|sqlalchemy|gorm|alembic)/.test(lowerContent) &&
-    /(schema|migration|entity|model|db|database|prisma|orm)/.test(lowerPath)
-  ) {
+  if (/(prisma|typeorm|sequelize|knex|drizzle|mongoose|sqlalchemy|gorm|alembic)/.test(lowerContent) && /(schema|migration|entity|model|db|database|prisma|orm)/.test(lowerPath)) {
     return 'orm';
   }
 
-  if (
-    /(components|pages|views|app\.|frontend|ui\/|client\/|web\/|main\.(tsx|jsx|js)$|index\.(tsx|jsx|js)$)/.test(
-      lowerPath
-    )
-  ) {
+  if (/(components|pages|views|app\.|frontend|ui\/|client\/|web\/|main\.(tsx|jsx|js)$|index\.(tsx|jsx|js)$)/.test(lowerPath)) {
     return 'frontend';
   }
 
@@ -442,10 +298,7 @@ function inferArchitectureRoleHeuristically(filePath, content, extension) {
     return 'api';
   }
 
-  if (
-    /(services|service|usecase|domain|worker|processor|orchestrator|manager)/.test(lowerPath) ||
-    /class\s+\w+service\b/.test(lowerContent)
-  ) {
+  if (/(services|service|usecase|domain|worker|processor|orchestrator|manager)/.test(lowerPath) || /class\s+\w+service\b/.test(lowerContent)) {
     return 'service';
   }
 
@@ -470,95 +323,59 @@ function buildRolePrompt(filePath, content, dependencyCount, exportCount) {
   ].join('\n');
 }
 
-function buildComponentPrompt(filePath, role, content, dependencyCount, exportCount) {
-  const snippet = clampText(content.replace(/\s+/g, ' ').trim(), 1800);
-  return [
-    `File: ${filePath}`,
-    `Role: ${role}`,
-    `Imports: ${dependencyCount}`,
-    `Exports: ${exportCount}`,
-    `Content: ${snippet}`,
-  ].join('\n');
-}
-
-async function runHuggingFaceZeroShot(prompt, candidateLabels) {
-  const token = getHuggingFaceToken();
+async function classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount) {
+  const token = process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN || process.env.HUGGINGFACEHUB_API_TOKEN;
   if (!token || typeof fetch !== 'function') {
-    console.info('[AI] HF token not available or fetch unavailable');
     return null;
   }
 
-  const candidateModels = [process.env.HF_MODEL, 'facebook/bart-large-mnli'].filter(Boolean);
+  const candidateModels = [
+    process.env.HF_MODEL,
+    'MoritzLaurer/deberta-v3-large-zeroshot-v2.0',
+    'facebook/bart-large-mnli',
+  ].filter(Boolean);
+
+  const prompt = buildRolePrompt(filePath, content, dependencyCount, exportCount);
+  const labels = HF_ZERO_SHOT_LABELS;
 
   for (const modelName of candidateModels) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000); // Increased to 30s
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
-      console.info(
-        `[AI-CHAT] Sending classification request to ${modelName} (${prompt.length} chars)...`
-      );
-      const response = await fetch(
-        `https://router.huggingface.co/hf-inference/models/${encodeURIComponent(modelName)}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
+      const response = await fetch(`https://api-inference.huggingface.co/models/${encodeURIComponent(modelName)}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: {
+            candidate_labels: labels,
+            multi_label: false,
           },
-          body: JSON.stringify({
-            inputs: prompt,
-            parameters: {
-              candidate_labels: candidateLabels,
-            },
-          }),
-          signal: controller.signal,
-        }
-      );
+        }),
+        signal: controller.signal,
+      });
 
       if (!response.ok) {
-        console.info(
-          `[AI-CHAT] API error from ${modelName}: ${response.status} ${response.statusText}`
-        );
         continue;
       }
 
       const result = await response.json();
-      let rankedLabels = [];
-
-      if (Array.isArray(result)) {
-        // The router often returns a list of { label, score } objects directly
-        rankedLabels = result.map((item) => item.label).filter(Boolean);
-      } else if (Array.isArray(result?.labels)) {
-        // Some endpoints return { labels: [...], scores: [...] }
-        rankedLabels = result.labels;
-      }
-
+      const rankedLabels = Array.isArray(result?.labels) ? result.labels : [];
       if (rankedLabels.length > 0) {
-        const bestLabel = String(rankedLabels[0]).toLowerCase();
-        const score = Array.isArray(result) ? result[0]?.score : result?.scores?.[0];
-        console.info(`[AI] HF classified as: ${bestLabel} (score: ${score?.toFixed(3) ?? 'N/A'})`);
-        return bestLabel;
+        return String(rankedLabels[0]).toLowerCase();
       }
-    } catch (err) {
-      console.info(`[AI] HF API error for ${modelName}:`, err instanceof Error ? err.message : err);
+    } catch {
+      // Fall through to the next model or heuristic fallback.
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  console.info('[AI] HF classification failed, falling back to heuristic');
   return null;
-}
-
-async function classifyArchitectureRoleWithHuggingFace(
-  filePath,
-  content,
-  dependencyCount,
-  exportCount
-) {
-  const prompt = buildRolePrompt(filePath, content, dependencyCount, exportCount);
-  return runHuggingFaceZeroShot(prompt, HF_ZERO_SHOT_LABELS);
 }
 
 function normalizeArchitectureRole(role) {
@@ -568,89 +385,6 @@ function normalizeArchitectureRole(role) {
   }
 
   return 'unknown';
-}
-
-function normalizeArchitectureComponent(component) {
-  const normalized = String(component || '')
-    .toLowerCase()
-    .trim();
-
-  const aliases = {
-    'api controller': 'controller',
-    'api interface': 'api-interface',
-    'api core': 'api-core',
-    'application service': 'application-services',
-    repository: 'repository',
-    'data model': 'data-models',
-    'data access': 'data-access',
-    'data migrations': 'data-migrations',
-    persistence: 'persistence',
-    module: 'module',
-    configuration: 'configuration',
-    'dto contract': 'dto',
-    'cross-cutting': 'cross-cutting',
-    'ui components': 'ui-components',
-    'ui pages': 'ui-pages',
-    'ui state': 'ui-state',
-    'frontend core': 'frontend-core',
-    'shared utilities': 'shared-utils',
-    'shared contracts': 'shared-contracts',
-    'shared core': 'shared-core',
-    unclassified: 'unclassified',
-  };
-
-  return aliases[normalized] ?? null;
-}
-
-function componentToRole(component, fallbackRole = 'unknown') {
-  if (
-    ['repository', 'data-models', 'data-access', 'data-migrations', 'persistence'].includes(
-      component
-    )
-  ) {
-    return component === 'persistence' || component === 'data-migrations' ? 'orm' : 'database';
-  }
-
-  if (['controller', 'api-interface', 'api-core'].includes(component)) {
-    return 'api';
-  }
-
-  if (['application-services'].includes(component)) {
-    return 'service';
-  }
-
-  if (['ui-components', 'ui-pages', 'ui-state', 'frontend-core'].includes(component)) {
-    return 'frontend';
-  }
-
-  if (
-    [
-      'shared-utils',
-      'shared-contracts',
-      'shared-core',
-      'dto',
-      'cross-cutting',
-      'configuration',
-      'module',
-    ].includes(component)
-  ) {
-    return 'shared';
-  }
-
-  return fallbackRole;
-}
-
-async function classifyArchitectureComponentWithHuggingFace(
-  filePath,
-  role,
-  content,
-  dependencyCount,
-  exportCount
-) {
-  const labels = ROLE_COMPONENT_CANDIDATES[role] ?? HF_COMPONENT_LABELS;
-  const prompt = buildComponentPrompt(filePath, role, content, dependencyCount, exportCount);
-  const result = await runHuggingFaceZeroShot(prompt, labels);
-  return normalizeArchitectureComponent(result);
 }
 
 function roleToLayer(role) {
@@ -699,49 +433,6 @@ function normalizeFeatureName(filePath) {
   return folderSegments[0];
 }
 
-function toReadableLabel(value) {
-  return String(value || '')
-    .replace(/[:/_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-    .join(' ');
-}
-
-function componentLabel(component) {
-  const map = {
-    module: 'Module',
-    controller: 'API Controller',
-    service: 'Application Service',
-    repository: 'Repository',
-    entity: 'Data Model',
-    dto: 'DTO Contract',
-    'cross-cutting': 'Cross-Cutting',
-    persistence: 'Persistence',
-    configuration: 'Configuration',
-    'ui-components': 'UI Components',
-    'ui-pages': 'UI Pages',
-    'ui-state': 'UI State',
-    'frontend-core': 'Frontend Core',
-    'api-interface': 'API Interface',
-    'api-core': 'API Core',
-    'application-services': 'Application Services',
-    'data-migrations': 'Data Migrations',
-    'data-models': 'Data Models',
-    'data-repositories': 'Data Repositories',
-    'data-access': 'Data Access',
-    'shared-utils': 'Shared Utilities',
-    'shared-contracts': 'Shared Contracts',
-    'shared-core': 'Shared Core',
-    unclassified: 'Unclassified',
-    support: 'Support',
-  };
-
-  return map[component] ?? toReadableLabel(component);
-}
-
 function inferArchitectureComponent(filePath, role) {
   const lower = filePath.toLowerCase();
 
@@ -749,42 +440,19 @@ function inferArchitectureComponent(filePath, role) {
     return { component: 'module', role: 'shared' };
   }
 
-  if (
-    lower.endsWith('.controller.ts') ||
-    lower.endsWith('.controller.js') ||
-    lower.endsWith('.resolver.ts') ||
-    lower.endsWith('.resolver.js') ||
-    lower.endsWith('.gateway.ts') ||
-    lower.endsWith('.gateway.js')
-  ) {
+  if (lower.endsWith('.controller.ts') || lower.endsWith('.controller.js') || lower.endsWith('.resolver.ts') || lower.endsWith('.resolver.js') || lower.endsWith('.gateway.ts') || lower.endsWith('.gateway.js')) {
     return { component: 'controller', role: 'api' };
   }
 
-  if (
-    lower.endsWith('.service.ts') ||
-    lower.endsWith('.service.js') ||
-    lower.includes('/services/')
-  ) {
+  if (lower.endsWith('.service.ts') || lower.endsWith('.service.js') || lower.includes('/services/')) {
     return { component: 'service', role: 'service' };
   }
 
-  if (
-    lower.endsWith('.repository.ts') ||
-    lower.endsWith('.repository.js') ||
-    lower.includes('/repositories/') ||
-    lower.includes('/repository/')
-  ) {
+  if (lower.endsWith('.repository.ts') || lower.endsWith('.repository.js') || lower.includes('/repositories/') || lower.includes('/repository/')) {
     return { component: 'repository', role: 'database' };
   }
 
-  if (
-    lower.endsWith('.entity.ts') ||
-    lower.endsWith('.entity.js') ||
-    lower.endsWith('.schema.ts') ||
-    lower.endsWith('.schema.js') ||
-    lower.includes('/entities/') ||
-    lower.includes('/schemas/')
-  ) {
+  if (lower.endsWith('.entity.ts') || lower.endsWith('.entity.js') || lower.endsWith('.schema.ts') || lower.endsWith('.schema.js') || lower.includes('/entities/') || lower.includes('/schemas/')) {
     return { component: 'entity', role: 'database' };
   }
 
@@ -792,35 +460,11 @@ function inferArchitectureComponent(filePath, role) {
     return { component: 'dto', role: 'shared' };
   }
 
-  if (
-    lower.endsWith('.guard.ts') ||
-    lower.endsWith('.guard.js') ||
-    lower.endsWith('.pipe.ts') ||
-    lower.endsWith('.pipe.js') ||
-    lower.endsWith('.interceptor.ts') ||
-    lower.endsWith('.interceptor.js') ||
-    lower.endsWith('.filter.ts') ||
-    lower.endsWith('.filter.js') ||
-    lower.endsWith('.middleware.ts') ||
-    lower.endsWith('.middleware.js') ||
-    lower.includes('/guards/') ||
-    lower.includes('/pipes/') ||
-    lower.includes('/interceptors/') ||
-    lower.includes('/filters/') ||
-    lower.includes('/middleware/')
-  ) {
+  if (lower.endsWith('.guard.ts') || lower.endsWith('.guard.js') || lower.endsWith('.pipe.ts') || lower.endsWith('.pipe.js') || lower.endsWith('.interceptor.ts') || lower.endsWith('.interceptor.js') || lower.endsWith('.filter.ts') || lower.endsWith('.filter.js') || lower.endsWith('.middleware.ts') || lower.endsWith('.middleware.js') || lower.includes('/guards/') || lower.includes('/pipes/') || lower.includes('/interceptors/') || lower.includes('/filters/') || lower.includes('/middleware/')) {
     return { component: 'cross-cutting', role: 'shared' };
   }
 
-  if (
-    lower.includes('/prisma/') ||
-    lower.includes('/typeorm/') ||
-    lower.includes('/sequelize/') ||
-    lower.includes('/migrations/') ||
-    lower.endsWith('.migration.ts') ||
-    lower.endsWith('.migration.js') ||
-    lower.includes('/seed')
-  ) {
+  if (lower.includes('/prisma/') || lower.includes('/typeorm/') || lower.includes('/sequelize/') || lower.includes('/migrations/') || lower.endsWith('.migration.ts') || lower.endsWith('.migration.js') || lower.includes('/seed')) {
     return { component: 'persistence', role: 'orm' };
   }
 
@@ -837,12 +481,7 @@ function inferArchitectureComponent(filePath, role) {
       return { component: 'ui-pages', role: 'frontend' };
     }
 
-    if (
-      lower.includes('/hooks/') ||
-      lower.includes('/store/') ||
-      lower.includes('/state/') ||
-      lower.includes('/context/')
-    ) {
+    if (lower.includes('/hooks/') || lower.includes('/store/') || lower.includes('/state/') || lower.includes('/context/')) {
       return { component: 'ui-state', role: 'frontend' };
     }
 
@@ -850,11 +489,7 @@ function inferArchitectureComponent(filePath, role) {
   }
 
   if (role === 'api') {
-    if (
-      lower.includes('/routes/') ||
-      lower.includes('/controllers/') ||
-      lower.includes('/handlers/')
-    ) {
+    if (lower.includes('/routes/') || lower.includes('/controllers/') || lower.includes('/handlers/')) {
       return { component: 'api-interface', role: 'api' };
     }
 
@@ -866,12 +501,7 @@ function inferArchitectureComponent(filePath, role) {
   }
 
   if (role === 'database' || role === 'orm') {
-    if (
-      lower.includes('/migration') ||
-      lower.includes('/seed') ||
-      lower.endsWith('.migration.ts') ||
-      lower.endsWith('.migration.js')
-    ) {
+    if (lower.includes('/migration') || lower.includes('/seed') || lower.endsWith('.migration.ts') || lower.endsWith('.migration.js')) {
       return { component: 'data-migrations', role: 'orm' };
     }
 
@@ -914,12 +544,10 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
       blockMap.set(blockId, {
         id: blockId,
         data: {
-          label: `${toReadableLabel(feature)} • ${componentLabel(component)}`,
+          label: `${feature} / ${component}`,
           ext: 'arch',
           language: 'architecture',
           directory: feature,
-          moduleLabel: toReadableLabel(feature),
-          componentLabel: componentLabel(component),
           imports: 0,
           exports: 0,
           role,
@@ -937,10 +565,7 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
 
   for (const record of fileRecords) {
     const feature = normalizeFeatureName(record.id);
-    const componentInfo = {
-      component: record.component ?? inferArchitectureComponent(record.id, record.role).component,
-      role: record.componentRole ?? inferArchitectureComponent(record.id, record.role).role,
-    };
+    const componentInfo = inferArchitectureComponent(record.id, record.role);
     const blockId = `arch:${feature}:${componentInfo.component}`;
     const block = ensureBlock(blockId, feature, componentInfo.component, componentInfo.role);
 
@@ -984,7 +609,7 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
   }
 
   const nodes = Array.from(blockMap.values());
-  const edges = Array.from(archEdgeMap.values()).map((edge) => ({
+  const edges = Array.from(archEdgeMap.values()).map(edge => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,
@@ -1016,205 +641,55 @@ function buildArchitectureGraph(fileRecords, fileEdges) {
   };
 }
 
-async function classifyArchitectureRole(
-  filePath,
-  content,
-  extension,
-  dependencyCount,
-  exportCount
-) {
-  const aiAssistEnabled =
-    String(process.env.archifind_AI_ASSIST ?? 'true').toLowerCase() !== 'false';
+async function classifyArchitectureRole(filePath, content, extension, dependencyCount, exportCount) {
   const heuristicRole = inferArchitectureRoleHeuristically(filePath, content, extension);
+  const aiAssistEnabled = String(process.env.ARCHFIND_AI_ASSIST || '').toLowerCase() === 'true';
 
-  if (aiAssistEnabled && getHuggingFaceToken()) {
-    const aiRole = await classifyArchitectureRoleWithHuggingFace(
-      filePath,
-      content,
-      dependencyCount,
-      exportCount
-    );
-    const normalizedAiRole = normalizeArchitectureRole(aiRole);
-
-    // Use AI result if it's not unknown, otherwise fallback to heuristic
-    if (normalizedAiRole !== 'unknown') {
-      console.info(`[ROLE] ${filePath}: AI=${normalizedAiRole} (was heuristic: ${heuristicRole})`);
-      return normalizedAiRole;
-    }
+  if (!process.env.HF_TOKEN) {
+    return heuristicRole;
   }
 
-  // Fallback: use heuristic if AI is disabled, no token, or AI returned unknown
+  const aiRole = await classifyArchitectureRoleWithHuggingFace(filePath, content, dependencyCount, exportCount);
+  const normalizedAiRole = normalizeArchitectureRole(aiRole);
+
+  if (heuristicRole === 'unknown') {
+    return normalizedAiRole;
+  }
+
+  if (!aiAssistEnabled || normalizedAiRole === 'unknown') {
+    return heuristicRole;
+  }
+
+  // Keep deterministic heuristics by default; AI only refines broad categories.
+  if (heuristicRole === 'shared' || heuristicRole === 'service' || heuristicRole === 'unknown') {
+    return normalizedAiRole;
+  }
+
   return heuristicRole;
-}
-
-async function classifyArchitectureComponent(
-  filePath,
-  role,
-  content,
-  dependencyCount,
-  exportCount
-) {
-  const aiComponentsEnabled =
-    String(process.env.archifind_AI_COMPONENTS ?? 'true').toLowerCase() !== 'false';
-  const heuristicComponent = inferArchitectureComponent(filePath, role);
-
-  if (aiComponentsEnabled && getHuggingFaceToken()) {
-    const aiComponent = await classifyArchitectureComponentWithHuggingFace(
-      filePath,
-      role,
-      content,
-      dependencyCount,
-      exportCount
-    );
-
-    if (aiComponent && aiComponent !== 'unclassified') {
-      const aiRole = componentToRole(aiComponent, role);
-      return { component: aiComponent, role: aiRole };
-    }
-  }
-
-  return heuristicComponent;
-}
-
-function summarizeProjectSkeleton(fileRecords) {
-  const summary = fileRecords
-    .map((r) => {
-      const deps = r.dependencies.slice(0, 5).join(', ');
-      const exps = r.exports.slice(0, 5).join(', ');
-      return `- ${r.id} | ext=${path.extname(r.id)} | deps=[${deps}] | exports=[${exps}]`;
-    })
-    .join('\n');
-
-  return summary;
-}
-
-async function generateArchitectureWithAi(fileRecords) {
-  const skeleton = summarizeProjectSkeleton(fileRecords);
-  console.info(`[AI] Project skeleton generated (${fileRecords.length} files).`);
-  console.info(`[AI] SENDING TO MODEL:\n${skeleton.slice(0, 500)}...\n[...truncated...]`);
-
-  const prompt = `
-You are a Senior Software Architect. Analyze the following project structure and return a JSON architecture map.
-Follow "Eraser.io" aesthetic: high-level, clean, and grouped by functional domains.
-
-Project Skeleton:
-${skeleton}
-
-Return ONLY a JSON object with this structure:
-{
-  "nodes": [{"id": "arch:domain:component", "data": {"label": "Component Name", "role": "api|service|database|frontend|shared", "kind": "component", "symbols": ["symbol1", "symbol2"], "files": ["path/to/file.ts"]}}],
-  "edges": [{"source": "arch:A", "target": "arch:B", "label": "descriptive relation"}],
-  "architectureGroups": [{"id": "role", "label": "Group Label", "count": 1, "layer": "data|interface|application|presentation|shared|support"}]
-}
-
-Rules:
-1. Aggregate files into logical "arch:" nodes.
-2. Every file in the skeleton MUST be assigned to at least one arch node's "files" array.
-3. Use professional naming (e.g., "Authentication Service" instead of "auth.ts").
-4. "role" must be one of: api, service, database, frontend, shared.
-5. "layer" must be one of: data, interface, application, presentation, shared, support.
-
-JSON:
-`;
-
-  console.info('[AI] Requesting architectural reasoning from LLM...');
-  const response = await runHuggingFaceChat(prompt);
-  if (!response) {
-    console.info('[AI] ERROR: No response from model.');
-    return null;
-  }
-
-  console.info(`[AI] RECEIVED FROM MODEL:\n${response.slice(0, 1000)}...\n[...truncated...]`);
-
-  try {
-    // Basic cleanup in case AI wraps in code blocks
-    const jsonStr = response
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
-    const graph = JSON.parse(jsonStr);
-    return {
-      ...graph,
-      mode: 'architecture',
-      generatedBy: 'AI-Native',
-    };
-  } catch (err) {
-    console.info('[AI] Failed to parse AI response as JSON:', err.message);
-    return null;
-  }
 }
 
 export async function analyzeProject(rootPath, options = {}) {
   const absoluteRoot = path.resolve(rootPath);
-  const MAX_FILE_SIZE = 500 * 1024;
-  const MAX_NODES = 1000;
-
-  const includeEnv = Boolean(options.includeEnv ?? process.env.ARCHIFIND_INCLUDE_ENV === 'true');
-  const searchPatterns = ['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'];
-  const ignorePatterns = ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.*/**'];
-
-  if (includeEnv) {
-    searchPatterns.push('**/.env*');
-  } else {
-    ignorePatterns.push('**/.env*');
-  }
-
-  const files = await fg(searchPatterns, {
+  const files = await fg(['**/*.{js,jsx,ts,tsx,mjs,cjs,py,go}'], {
     cwd: absoluteRoot,
-    ignore: ignorePatterns,
+    ignore: ['**/node_modules/**', '**/dist/**', '**/vendor/**', '**/.*/**'],
     absolute: true,
-    dot: true,
   });
 
   const nodes = [];
   const fileEdges = [];
   const fileLookup = new Map();
   const groupCounts = new Map();
+  const fileContents = new Map();
   const fileRecords = [];
-  const requestedGraphMode = String(
-    options.graphMode || process.env.archifind_GRAPH_MODE || 'architecture'
-  ).toLowerCase();
+  const requestedGraphMode = String(options.graphMode || process.env.ARCHFIND_GRAPH_MODE || 'architecture').toLowerCase();
 
   for (const file of files) {
-    if (nodes.length >= MAX_NODES) break;
-
-    let stat;
-    try {
-      stat = fs.statSync(file);
-      if (stat.size > MAX_FILE_SIZE) {
-        continue;
-      }
-    } catch {
-      continue;
-    }
-
     const relativePath = normalizeRelativePath(absoluteRoot, file);
     const extension = path.extname(file).slice(1).toLowerCase();
-
-    let content;
-    try {
-      content = fs.readFileSync(file, 'utf-8');
-    } catch {
-      continue;
-    }
-
+    const content = fs.readFileSync(file, 'utf-8');
     const { dependencies, exports } = parseFile(content, path.extname(file).toLowerCase());
-    const role = normalizeArchitectureRole(
-      await classifyArchitectureRole(
-        relativePath,
-        content,
-        path.extname(file).toLowerCase(),
-        dependencies.length,
-        exports.length
-      )
-    );
-    const componentInfo = await classifyArchitectureComponent(
-      relativePath,
-      role,
-      content,
-      dependencies.length,
-      exports.length
-    );
+    const role = normalizeArchitectureRole(await classifyArchitectureRole(relativePath, content, path.extname(file).toLowerCase(), dependencies.length, exports.length));
     const layer = roleToLayer(role);
 
     if (HIDDEN_ROLES.has(role)) {
@@ -1222,6 +697,7 @@ export async function analyzeProject(rootPath, options = {}) {
     }
 
     fileLookup.set(relativePath, file);
+    fileContents.set(relativePath, content);
     groupCounts.set(role, (groupCounts.get(role) ?? 0) + 1);
 
     const node = {
@@ -1229,23 +705,13 @@ export async function analyzeProject(rootPath, options = {}) {
       data: {
         label: relativePath,
         ext: extension,
-        language:
-          extension === 'tsx' || extension === 'ts'
-            ? 'typescript'
-            : extension === 'jsx' || extension === 'js'
-              ? 'javascript'
-              : extension === 'py'
-                ? 'python'
-                : extension === 'go'
-                  ? 'go'
-                  : extension,
+        language: extension === 'tsx' || extension === 'ts' ? 'typescript' : extension === 'jsx' || extension === 'js' ? 'javascript' : extension === 'py' ? 'python' : extension === 'go' ? 'go' : extension,
         directory: toPosixPath(path.dirname(relativePath)),
-        imports: dependencies.length,
-        exports: exports.length,
+        imports: 0,
+        exports: 0,
         role,
         layer,
         kind: extension,
-        symbols: exports.slice(0, 8),
       },
       position: { x: 0, y: 0 },
     };
@@ -1254,29 +720,30 @@ export async function analyzeProject(rootPath, options = {}) {
     fileRecords.push({
       id: relativePath,
       file,
+      content,
       extension: path.extname(file).toLowerCase(),
       dependencies,
       exports,
       role,
       layer,
-      component: componentInfo.component,
-      componentRole: componentInfo.role,
     });
   }
 
-  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const nodeById = new Map(nodes.map(node => [node.id, node]));
 
-  for (const record of fileRecords) {
-    const file = record.file;
-    const relativePath = record.id;
-    const extension = record.extension;
-    const dependencies = record.dependencies;
+  for (const file of files) {
+    const relativePath = normalizeRelativePath(absoluteRoot, file);
+    const extension = path.extname(file).toLowerCase();
+    const content = fileContents.get(relativePath) ?? fs.readFileSync(file, 'utf-8');
+    const { dependencies, exports } = parseFile(content, extension);
     const language = extension === '.py' ? 'python' : extension === '.go' ? 'go' : 'js';
     const seenTargets = new Set();
 
     const node = nodeById.get(relativePath);
     if (node) {
-      node.data.symbols = record.exports.slice(0, 8);
+      node.data.imports = dependencies.length;
+      node.data.exports = exports.length;
+      node.data.symbols = exports;
     }
 
     for (const dependency of dependencies) {
@@ -1298,21 +765,6 @@ export async function analyzeProject(rootPath, options = {}) {
   }
 
   if (requestedGraphMode !== 'file') {
-    const useAiNative =
-      String(process.env.archifind_AI_NATIVE ?? options.aiNative ?? 'true').toLowerCase() ===
-      'true';
-
-    if (useAiNative && getHuggingFaceToken()) {
-      const aiGraph = await generateArchitectureWithAi(fileRecords);
-      if (aiGraph) {
-        return {
-          ...aiGraph,
-          generatedAt: new Date().toISOString(),
-        };
-      }
-      console.info('[AI] Falling back to heuristic architecture generation');
-    }
-
     const architectureGraph = buildArchitectureGraph(fileRecords, fileEdges);
     return {
       nodes: architectureGraph.nodes,
